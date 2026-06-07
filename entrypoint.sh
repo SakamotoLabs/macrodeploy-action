@@ -37,35 +37,12 @@ verify.sh .
 VERIFY_RC=$?
 echo "::endgroup::"
 
-# ── 3. AI review (best-effort) ──────────────────────────────────────────────
+# ── 3. AI review → Check Run with inline annotations (best-effort) ───────────
 if [ "$REVIEW" = "true" ] && [ -n "$KEY" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
   echo "::group::AI review"
   git config --global --add safe.directory "$PWD" 2>/dev/null || true
   git fetch --no-tags --depth=50 origin "$GITHUB_BASE_REF" 2>/dev/null || true
-  DIFF=$(git diff --no-color "origin/${GITHUB_BASE_REF}...HEAD" 2>/dev/null | head -c 60000)
-
-  if [ -n "$DIFF" ]; then
-    PROMPT=$'Review this pull request diff. Be concise and concrete: flag real correctness or security bugs with file:line, skip style nits. If it looks good, say so in one line.\n\n'"$DIFF"
-    REQ=$(jq -n --arg m "$MODEL" --arg p "$PROMPT" \
-      '{model:$m, max_tokens:1024, messages:[{role:"user", content:$p}]}')
-    RESP=$(curl -s https://api.anthropic.com/v1/messages \
-      -H "x-api-key: $KEY" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" \
-      -d "$REQ")
-    BODY=$(echo "$RESP" | jq -r '.content[0].text // .error.message // "review unavailable"')
-    echo "$BODY"
-
-    if [ -n "${GITHUB_TOKEN:-}" ] && [ -f "${GITHUB_EVENT_PATH:-/dev/null}" ]; then
-      PR=$(jq -r '.pull_request.number // .number // empty' "$GITHUB_EVENT_PATH")
-      if [ -n "$PR" ]; then
-        COMMENT=$(jq -n --arg b "$BODY" '{body:("### 🤖 MacroDeploy review\n\n"+$b)}')
-        curl -s -X POST \
-          -H "Authorization: Bearer $GITHUB_TOKEN" \
-          -H "Accept: application/vnd.github+json" \
-          "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
-          -d "$COMMENT" >/dev/null && echo "(posted PR comment)"
-      fi
-    fi
-  fi
+  INPUT_ANTHROPIC_API_KEY="$KEY" INPUT_MODEL="$MODEL" node /usr/local/bin/review.mjs || true
   echo "::endgroup::"
 fi
 

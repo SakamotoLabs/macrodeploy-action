@@ -18,7 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write      # for the review comment
+      pull-requests: write      # for the review
+      checks: write             # for the inline annotations
     steps:
       - uses: actions/checkout@v4
         with:
