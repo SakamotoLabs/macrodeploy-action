@@ -61,7 +61,10 @@ inputs:
 
 runs:
   using: "docker"
-  image: "Dockerfile"
+  # Prebuilt image (published by .github/workflows/build-image.yml) so consumer
+  # repos pull instead of rebuilding the Chromium image every run. Requires the
+  # GHCR package to be public.
+  image: "docker://ghcr.io/sakamotolabs/macrodeploy-action:v1"
   env:
     INPUT_ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
     INPUT_FAST: ${{ inputs.fast }}
