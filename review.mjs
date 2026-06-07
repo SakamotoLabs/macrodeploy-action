@@ -8,7 +8,9 @@ const KEY = process.env.INPUT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY
 const MODEL = process.env.INPUT_MODEL || "claude-sonnet-4-6";
 const TOKEN = process.env.GITHUB_TOKEN || "";
 const REPO = process.env.GITHUB_REPOSITORY || "";
-const BASE = process.env.GITHUB_BASE_REF || "";
+// REVIEW_BASE_REF / REVIEW_HEAD_SHA let the implement flow review the agent's
+// own commit; otherwise fall back to the pull_request context.
+const BASE = process.env.REVIEW_BASE_REF || process.env.GITHUB_BASE_REF || "";
 const EVENT_PATH = process.env.GITHUB_EVENT_PATH || "";
 
 function bail(msg) {
@@ -17,15 +19,17 @@ function bail(msg) {
 }
 
 if (!KEY) bail("no API key — skipping review");
-if (!BASE) bail("not a pull request — skipping review");
+if (!BASE) bail("no base ref — skipping review");
 if (!TOKEN || !REPO) bail("missing GITHUB_TOKEN/REPOSITORY — skipping review");
 
-// Head SHA of the PR (annotations attach to the real commit, not the merge ref).
-let headSha = process.env.GITHUB_SHA;
-try {
-  const ev = JSON.parse(readFileSync(EVENT_PATH, "utf8"));
-  headSha = ev.pull_request?.head?.sha || headSha;
-} catch {}
+// Head SHA the annotations attach to.
+let headSha = process.env.REVIEW_HEAD_SHA || process.env.GITHUB_SHA;
+if (!process.env.REVIEW_HEAD_SHA) {
+  try {
+    const ev = JSON.parse(readFileSync(EVENT_PATH, "utf8"));
+    headSha = ev.pull_request?.head?.sha || headSha;
+  } catch {}
+}
 
 let diff = "";
 try {

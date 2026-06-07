@@ -73,3 +73,26 @@ curl -s -X POST \
   -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
   -d "$PR_JSON" | jq -r '.html_url // ("PR create failed: " + (.message // "unknown"))'
+
+# Gate + review the agent's own code here (a GITHUB_TOKEN-created PR doesn't
+# auto-trigger the verify workflow, so we post the checks directly on its commit).
+HEAD_SHA=$(git rev-parse HEAD)
+
+echo "::group::Verify (agent code)"
+verify.sh .
+GATE_RC=$?
+echo "::endgroup::"
+CONCL=$([ "$GATE_RC" -eq 0 ] && echo success || echo failure)
+curl -s -X POST \
+  -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs" \
+  -d "$(jq -n --arg s "$HEAD_SHA" --arg c "$CONCL" \
+    '{name:"MacroDeploy gate", head_sha:$s, status:"completed", conclusion:$c, output:{title:"Verify gate", summary:("Gate " + $c + " on the agent’s changes.")}}')" \
+  >/dev/null && echo "gate check posted ($CONCL)"
+
+echo "::group::Review (agent code)"
+REVIEW_BASE_REF="$DEFAULT" REVIEW_HEAD_SHA="$HEAD_SHA" \
+  INPUT_ANTHROPIC_API_KEY="$KEY" INPUT_MODEL="$MODEL" \
+  node /usr/local/bin/review.mjs || true
+echo "::endgroup::"
