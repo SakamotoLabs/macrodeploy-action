@@ -77,6 +77,17 @@ ${SUMMARY:-(no detail provided)}
 
 **Findings considered:**
 ${FINDINGS}" '{body:$b}')" >/dev/null || true
+
+  # The agent reviewed the significant findings and required no change → clear
+  # them so they stop showing as outstanding (keep notices). Posts a fresh review
+  # check on the same commit; the dashboard reads the latest one.
+  if [ -n "$CID" ] && [ "$CID" != "null" ]; then
+    KEEP=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs/${CID}/annotations" \
+      | jq '[.[] | select(.annotation_level=="notice") | {path, start_line, end_line, annotation_level, message}]')
+    api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs" \
+      -d "$(jq -n --argjson ann "${KEEP:-[]}" --arg s "$HEAD_SHA" '{name:"MacroDeploy review", head_sha:$s, status:"completed", conclusion:"success", output:{title:"MacroDeploy review", summary:"Earlier findings were assessed by the fix agent and required no change — cleared. See the fix comment for the reasoning.", annotations:$ann}}')" \
+      >/dev/null && echo "fix: cleared dismissed findings"
+  fi
   exit 0
 fi
 

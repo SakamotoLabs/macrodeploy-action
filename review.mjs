@@ -38,17 +38,47 @@ try {
   bail("could not compute diff");
 }
 if (!diff.trim()) bail("empty diff");
-diff = diff.slice(0, 60000);
+diff = diff.slice(0, 35000);
 
-const PROMPT = `Review this pull request diff. Respond with ONLY JSON (no prose, no code fences) of the form:
+// Full content of changed files (capped) so the reviewer can SEE imports,
+// helpers, and definitions that live outside the diff hunks — this is what
+// prevents false positives like "is X imported?" when X is imported elsewhere.
+let context = "";
+try {
+  const files = execSync(`git diff --name-only origin/${BASE}...HEAD`, { encoding: "utf8" })
+    .split("\n")
+    .filter(Boolean);
+  let budget = 45000;
+  for (const f of files) {
+    let body = "";
+    try {
+      body = readFileSync(f, "utf8");
+    } catch {
+      continue; // deleted/binary
+    }
+    const chunk = `\n\n===== FILE: ${f} =====\n${body}`;
+    if (chunk.length > budget) break;
+    context += chunk;
+    budget -= chunk.length;
+  }
+} catch {
+  /* best-effort */
+}
+
+const PROMPT = `Review this pull request. Respond with ONLY JSON (no prose, no code fences) of the form:
 {"summary": "<2-4 sentence overall verdict>",
  "findings": [{"path": "<repo-relative file>", "line": <int line in the new file>, "level": "notice|warning|failure", "comment": "<concrete issue + fix>"}]}
 Flag real correctness/security bugs; skip style nits. Empty findings array if it looks good.
 
+Only flag issues introduced by the DIFF. Use the FULL FILES below for context so you DON'T raise false positives about things that already exist outside the diff (e.g. an import, helper, or type that's present elsewhere in the file). If you're tempted to say "ensure X is imported/defined", first check the full file — if it's there, do not flag it.
+
 Each "comment" MUST be 1-2 sentences, concrete and FINAL — no reasoning out loud, no "wait", no second-guessing or retracting. Output STRICT, valid JSON: double-quoted strings only, escape any double quote inside a string as \\", and never use a backslash before a single quote.
 
 DIFF:
-${diff}`;
+${diff}
+
+FULL FILES (context only — do not flag pre-existing code):
+${context}`;
 
 async function anthropic() {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
