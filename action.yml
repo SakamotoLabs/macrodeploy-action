@@ -23,9 +23,25 @@ inputs:
     required: false
     default: "claude-sonnet-4-6"
   github_token:
-    description: "Token used to post the review comment. Defaults to the workflow token."
+    description: "Token used to post the review / open the PR. Defaults to the workflow token."
     required: false
     default: ${{ github.token }}
+  mode:
+    description: "verify (PR gate + review) or implement (issue→PR agent)."
+    required: false
+    default: "verify"
+  issue_number:
+    description: "Issue number (implement mode)."
+    required: false
+    default: ""
+  issue_title:
+    description: "Issue title (implement mode)."
+    required: false
+    default: ""
+  issue_body:
+    description: "Issue body (implement mode)."
+    required: false
+    default: ""
 
 runs:
   using: "docker"
@@ -35,4 +51,8 @@ runs:
     INPUT_FAST: ${{ inputs.fast }}
     INPUT_REVIEW: ${{ inputs.review }}
     INPUT_MODEL: ${{ inputs.model }}
+    INPUT_MODE: ${{ inputs.mode }}
+    INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+    INPUT_ISSUE_TITLE: ${{ inputs.issue_title }}
+    INPUT_ISSUE_BODY: ${{ inputs.issue_body }}
     GITHUB_TOKEN: ${{ inputs.github_token }}
