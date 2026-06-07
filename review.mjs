@@ -112,3 +112,26 @@ if (!res.ok) {
 } else {
   console.log(`review: posted check with ${annotations.length} annotation(s)`);
 }
+
+// Also document the review as a PR comment so the trail is visible in the PR,
+// not just in Checks. PR number: explicit (implement/fix) or the PR event.
+let prNum = process.env.REVIEW_PR_NUMBER || "";
+if (!prNum && EVENT_PATH) {
+  try {
+    prNum = String(JSON.parse(readFileSync(EVENT_PATH, "utf8")).pull_request?.number || "");
+  } catch {}
+}
+if (prNum) {
+  const shortSha = (headSha || "").slice(0, 8);
+  const lines = findings
+    .filter((f) => f && f.path)
+    .map((f) => `- \`${f.path}:${f.line ?? "?"}\` _[${f.level || "warning"}]_ ${f.comment || ""}`);
+  const body =
+    `### 🔎 MacroDeploy AI review — commit \`${shortSha}\`\n\n` +
+    (review.summary || "") +
+    (lines.length
+      ? `\n\n**${lines.length} finding(s):**\n${lines.join("\n")}`
+      : "\n\n✅ No blocking issues found.");
+  const c = await gh(`issues/${prNum}/comments`, { body });
+  console.log(c.ok ? `review: posted PR comment on #${prNum}` : `review: PR comment failed (${c.status})`);
+}

@@ -36,11 +36,13 @@ ${BODY}
 
 Make minimal, correct edits to the files in this repository to satisfy the issue.
 Add or update tests where it makes sense. Do NOT use git and do NOT open a pull
-request — only edit files. Keep the change focused."
+request — only edit files. Keep the change focused. End your reply with a 1-3
+sentence summary of what you implemented."
 # Docker actions run as root, where --dangerously-skip-permissions is refused.
 # acceptEdits auto-approves file create/edit (Write/Edit) without prompts.
-claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
-  --allowedTools "Edit,Write,Read" || echo "(agent run returned non-zero)"
+SUMMARY=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
+  --allowedTools "Edit,Write,Read" 2>/dev/null) || echo "(agent run returned non-zero)"
+echo "$SUMMARY"
 echo "::endgroup::"
 
 # Use porcelain (not `git diff`) so newly-created untracked files count too.
@@ -65,14 +67,19 @@ PR_JSON=$(jq -n \
   --arg h "$BRANCH" --arg b "$DEFAULT" \
   --arg body "Implements #${NUM} — opened by MacroDeploy.
 
+## What this does
+${SUMMARY:-(see commit)}
+
 Closes #${NUM}" \
   '{title:$t, head:$h, base:$b, body:$body}')
 
-curl -s -X POST \
+PR_RESP=$(curl -s -X POST \
   -H "Authorization: Bearer ${GITHUB_TOKEN}" \
   -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
-  -d "$PR_JSON" | jq -r '.html_url // ("PR create failed: " + (.message // "unknown"))'
+  -d "$PR_JSON")
+PR_NUM=$(echo "$PR_RESP" | jq -r '.number // empty')
+echo "$PR_RESP" | jq -r '.html_url // ("PR create failed: " + (.message // "unknown"))'
 
 # Gate + review the agent's own code here (a GITHUB_TOKEN-created PR doesn't
 # auto-trigger the verify workflow, so we post the checks directly on its commit).
@@ -92,7 +99,7 @@ curl -s -X POST \
   >/dev/null && echo "gate check posted ($CONCL)"
 
 echo "::group::Review (agent code)"
-REVIEW_BASE_REF="$DEFAULT" REVIEW_HEAD_SHA="$HEAD_SHA" \
+REVIEW_BASE_REF="$DEFAULT" REVIEW_HEAD_SHA="$HEAD_SHA" REVIEW_PR_NUMBER="$PR_NUM" \
   INPUT_ANTHROPIC_API_KEY="$KEY" INPUT_MODEL="$MODEL" \
   node /usr/local/bin/review.mjs || true
 echo "::endgroup::"
