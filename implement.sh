@@ -43,7 +43,8 @@ claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
   --allowedTools "Edit,Write,Read" || echo "(agent run returned non-zero)"
 echo "::endgroup::"
 
-if git diff --quiet && git diff --cached --quiet; then
+# Use porcelain (not `git diff`) so newly-created untracked files count too.
+if [ -z "$(git status --porcelain)" ]; then
   echo "implement: agent made no file changes — nothing to PR"
   exit 0
 fi
