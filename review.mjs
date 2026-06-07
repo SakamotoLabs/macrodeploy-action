@@ -58,7 +58,9 @@ async function anthropic() {
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    body: JSON.stringify({ model: MODEL, max_tokens: 1500, messages: [{ role: "user", content: PROMPT }] }),
+    // temperature 0 → stable, repeatable reviews (severity/findings don't drift
+    // run-to-run on the same code), which matters for the fix → re-review loop.
+    body: JSON.stringify({ model: MODEL, max_tokens: 1500, temperature: 0, messages: [{ role: "user", content: PROMPT }] }),
   });
   const data = await res.json();
   const text = data?.content?.[0]?.text ?? "";
