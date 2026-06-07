@@ -37,7 +37,10 @@ ${BODY}
 Make minimal, correct edits to the files in this repository to satisfy the issue.
 Add or update tests where it makes sense. Do NOT use git and do NOT open a pull
 request — only edit files. Keep the change focused."
-claude -p "$PROMPT" --model "$MODEL" --dangerously-skip-permissions || echo "(agent run returned non-zero)"
+# Docker actions run as root, where --dangerously-skip-permissions is refused.
+# acceptEdits auto-approves file create/edit (Write/Edit) without prompts.
+claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
+  --allowedTools "Edit,Write,Read" || echo "(agent run returned non-zero)"
 echo "::endgroup::"
 
 if git diff --quiet && git diff --cached --quiet; then
