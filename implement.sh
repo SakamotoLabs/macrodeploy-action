@@ -18,6 +18,10 @@ NUM="${INPUT_ISSUE_NUMBER:-}"
 
 git config --global --add safe.directory "$PWD" 2>/dev/null || true
 
+# Scoped (changed-files-only) test runner for the red→green gate.
+# shellcheck source=/dev/null
+source /usr/local/bin/scoped-tests.sh
+
 echo "::group::Install dependencies"
 if [ -f package.json ]; then
   corepack enable >/dev/null 2>&1 || true
@@ -28,22 +32,35 @@ if [ -f package.json ]; then
 fi
 echo "::endgroup::"
 
-echo "::group::Agent (Claude Code)"
+echo "::group::Agent (Claude Code, test-first)"
 export ANTHROPIC_API_KEY="$KEY"
 PROMPT="You are implementing GitHub issue #${NUM}: \"${TITLE}\".
 
 ${BODY}
 
-Make minimal, correct edits to the files in this repository to satisfy the issue.
-ALWAYS add or update a test that exercises this change — this is required, and
-ideally it would fail without your change and pass with it. Do NOT use git and do
-NOT open a pull request — only edit files. Keep the change focused. End your reply
-with a 1-3 sentence summary of what you implemented."
+Make minimal, correct edits to satisfy the issue, working test-first:
+  1. Add a FOCUSED test that captures the new behavior and fails before your change
+     (run ONLY that test plus closely-related tests to see it fail — do NOT run the
+     whole suite; it is slow and runs later as a separate gate).
+  2. Implement the change.
+  3. Run ONLY those targeted/related tests again and iterate until they pass (green).
+A test proving the change is REQUIRED. Use the repo's existing test runner.
+
+Do NOT use git and do NOT open a pull request — only edit files and run tests.
+
+End your reply with a 1-3 sentence summary, then on the VERY LAST line exactly one of:
+  MACRODEPLOY_VERIFY=pass   (targeted test added and passing red→green)
+  MACRODEPLOY_VERIFY=fail   (could not get the targeted test passing)
+  MACRODEPLOY_VERIFY=none   (no targeted test was feasible)"
 # Docker actions run as root, where --dangerously-skip-permissions is refused.
-# acceptEdits auto-approves file create/edit (Write/Edit) without prompts.
-SUMMARY=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
-  --allowedTools "Edit,Write,Read" 2>/dev/null) || echo "(agent run returned non-zero)"
+# acceptEdits auto-approves Write/Edit; Bash is allowlisted so the agent can run
+# the targeted tests for the red→green loop.
+RAW=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
+  --allowedTools "Edit,Write,Read,Bash,Grep,Glob" 2>/dev/null) || echo "(agent run returned non-zero)"
+VERDICT=$(printf '%s\n' "$RAW" | grep -oE 'MACRODEPLOY_VERIFY=(pass|fail|none)' | tail -1 | cut -d= -f2)
+SUMMARY=$(printf '%s\n' "$RAW" | grep -v 'MACRODEPLOY_VERIFY=')
 echo "$SUMMARY"
+echo "implement: agent verdict = ${VERDICT:-unknown}"
 echo "::endgroup::"
 
 # Use porcelain (not `git diff`) so newly-created untracked files count too.
@@ -63,6 +80,23 @@ git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITO
 DEFAULT=$(jq -r '.repository.default_branch // "main"' "${GITHUB_EVENT_PATH:-/dev/null}" 2>/dev/null)
 [ -z "$DEFAULT" ] || [ "$DEFAULT" = "null" ] && DEFAULT=main
 
+# Red→green gate (SCOPED): confirm the agent's verdict by re-running ONLY the
+# changed test files (the whole suite runs below as the pre-merge gate). On
+# failure we still open the PR so the work surfaces, but flag it for a human and
+# skip auto-merge — an unverified change never merges on its own.
+echo "::group::Scoped tests (changed files only)"
+run_changed_tests "$DEFAULT"; SC=$?
+echo "::endgroup::"
+FAILED=0
+{ [ "$VERDICT" = "fail" ] || [ "${SC:-2}" -eq 1 ]; } && FAILED=1
+if [ "$FAILED" -eq 1 ]; then
+  VERIFY_NOTE="❌ Targeted tests not passing — flagged for human review, auto-merge held."
+elif [ "$VERDICT" = "none" ]; then
+  VERIFY_NOTE="⚠️ No targeted test was feasible — the full suite runs at the merge gate."
+else
+  VERIFY_NOTE="✅ Targeted test added and confirmed passing (red→green)."
+fi
+
 PR_JSON=$(jq -n \
   --arg t "Implement #${NUM}: ${TITLE}" \
   --arg h "$BRANCH" --arg b "$DEFAULT" \
@@ -70,6 +104,8 @@ PR_JSON=$(jq -n \
 
 ## What this does
 ${SUMMARY:-(see commit)}
+
+**Verification:** ${VERIFY_NOTE}
 
 Closes #${NUM}" \
   '{title:$t, head:$h, base:$b, body:$body}')
@@ -85,6 +121,30 @@ echo "$PR_RESP" | jq -r '.html_url // ("PR create failed: " + (.message // "unkn
 # Gate + review the agent's own code here (a GITHUB_TOKEN-created PR doesn't
 # auto-trigger the verify workflow, so we post the checks directly on its commit).
 HEAD_SHA=$(git rev-parse HEAD)
+
+ghpost() {
+  curl -s -X POST -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/$1" -d "$2" >/dev/null
+}
+
+# Red→green failed: surface the PR for a human, mark the gate red, review for
+# context, and DO NOT auto-merge. The work is preserved on the branch.
+if [ "$FAILED" -eq 1 ] && [ -n "$PR_NUM" ]; then
+  ghpost "issues/${PR_NUM}/labels" '{"labels":["needs-human"]}'
+  ghpost "issues/${PR_NUM}/comments" "$(jq -n --arg b "### 🙋 MacroDeploy — needs a human
+
+The implementation is up, but its targeted tests are not passing, so it was not auto-merged.
+
+**Agent summary:**
+${SUMMARY:-(none)}" '{body:$b}')"
+  ghpost "check-runs" "$(jq -n --arg s "$HEAD_SHA" '{name:"MacroDeploy gate", head_sha:$s, status:"completed", conclusion:"failure", output:{title:"Verify gate", summary:"Targeted tests failing on the agent’s changes — needs human review."}}')"
+  echo "::group::Review (agent code)"
+  REVIEW_BASE_REF="$DEFAULT" REVIEW_HEAD_SHA="$HEAD_SHA" REVIEW_PR_NUMBER="$PR_NUM" \
+    INPUT_ANTHROPIC_API_KEY="$KEY" INPUT_MODEL="$MODEL" node /usr/local/bin/review.mjs || true
+  echo "::endgroup::"
+  echo "implement: escalated #${PR_NUM} — targeted tests failing, auto-merge held"
+  exit 0
+fi
 
 echo "::group::Verify (agent code)"
 verify.sh .

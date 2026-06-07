@@ -26,6 +26,7 @@ COPY verify.sh /usr/local/bin/verify.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY implement.sh /usr/local/bin/implement.sh
 COPY fix.sh /usr/local/bin/fix.sh
+COPY scoped-tests.sh /usr/local/bin/scoped-tests.sh
 COPY review.mjs /usr/local/bin/review.mjs
 COPY review-pr.sh /usr/local/bin/review-pr.sh
 COPY security.mjs /usr/local/bin/security.mjs
