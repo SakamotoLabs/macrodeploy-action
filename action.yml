@@ -1,0 +1,38 @@
+name: "MacroDeploy"
+description: "Run a project's build/test verify gate (auto-detected) and an optional AI review of the PR diff."
+author: "Sakamoto Labs"
+branding:
+  icon: "check-circle"
+  color: "green"
+
+inputs:
+  anthropic_api_key:
+    description: "Anthropic API key. If omitted, the AI review is skipped (the verify gate still runs)."
+    required: false
+    default: ""
+  fast:
+    description: "Skip the build step (typecheck + lint + tests only)."
+    required: false
+    default: "false"
+  review:
+    description: "Post an AI review comment on the PR diff."
+    required: false
+    default: "true"
+  model:
+    description: "Claude model for the review."
+    required: false
+    default: "claude-sonnet-4-6"
+  github_token:
+    description: "Token used to post the review comment. Defaults to the workflow token."
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: "docker"
+  image: "Dockerfile"
+  env:
+    INPUT_ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+    INPUT_FAST: ${{ inputs.fast }}
+    INPUT_REVIEW: ${{ inputs.review }}
+    INPUT_MODEL: ${{ inputs.model }}
+    GITHUB_TOKEN: ${{ inputs.github_token }}

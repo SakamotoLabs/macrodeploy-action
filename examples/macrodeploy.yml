@@ -1,0 +1,18 @@
+# Copy this to .github/workflows/macrodeploy.yml in any repo you want the loop on.
+name: MacroDeploy
+on:
+  pull_request:
+jobs:
+  macrodeploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: sakamotolabs/macrodeploy-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          fast: "false"
