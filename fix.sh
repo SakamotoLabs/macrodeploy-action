@@ -69,9 +69,11 @@ echo "::endgroup::"
 if [ -z "$(git status --porcelain)" ]; then
   echo "fix: agent made no changes"
   api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
-    -d "$(jq -n --arg b "### 🔧 MacroDeploy fix
+    -d "$(jq -n --arg b "### 🔧 MacroDeploy fix — no change needed
 
-The agent reviewed the findings but made no code changes (they may already be resolved, or need a human).
+The agent assessed the findings and decided no code change was required (e.g. the concern was already handled, or it was a false positive). Its reasoning:
+
+${SUMMARY:-(no detail provided)}
 
 **Findings considered:**
 ${FINDINGS}" '{body:$b}')" >/dev/null || true
