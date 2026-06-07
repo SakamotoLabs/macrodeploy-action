@@ -24,6 +24,10 @@ if [ "${INPUT_MODE:-verify}" = "coverage" ]; then
   git config --global --add safe.directory "$PWD" 2>/dev/null || true
   exec node /usr/local/bin/coverage.mjs
 fi
+if [ "${INPUT_MODE:-verify}" = "recommend" ]; then
+  git config --global --add safe.directory "$PWD" 2>/dev/null || true
+  exec node /usr/local/bin/recommend.mjs
+fi
 if [ "${INPUT_MODE:-verify}" = "qa" ]; then
   git config --global --add safe.directory "$PWD" 2>/dev/null || true
   exec node /usr/local/bin/qa.mjs

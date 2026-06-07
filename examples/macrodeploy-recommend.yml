@@ -1,0 +1,19 @@
+# Gap & opportunity audit: the dashboard dispatches this to recommend what to
+# build or finish next (gaps + new features), posted as a "MacroDeploy
+# recommendations" check. Copy to .github/workflows/macrodeploy-recommend.yml.
+# Needs the ANTHROPIC_API_KEY secret.
+name: MacroDeploy Recommend
+on:
+  workflow_dispatch:
+jobs:
+  recommend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sakamotolabs/macrodeploy-action@v1
+        with:
+          mode: recommend
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
