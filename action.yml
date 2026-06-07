@@ -27,7 +27,7 @@ inputs:
     required: false
     default: ${{ github.token }}
   mode:
-    description: "verify (PR gate + review), implement (issue→PR), fix, security, coverage, recommend (gap & feature audit), plan (feature→tasks), or qa (headless Chrome QA)."
+    description: "verify (PR gate + review), implement (issue→PR), fix, review (re-review a PR), security, coverage, recommend, plan, or qa (headless Chrome QA)."
     required: false
     default: "verify"
   issue_number:

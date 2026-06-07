@@ -16,6 +16,9 @@ fi
 if [ "${INPUT_MODE:-verify}" = "fix" ]; then
   exec /usr/local/bin/fix.sh
 fi
+if [ "${INPUT_MODE:-verify}" = "review" ]; then
+  exec /usr/local/bin/review-pr.sh
+fi
 if [ "${INPUT_MODE:-verify}" = "security" ]; then
   git config --global --add safe.directory "$PWD" 2>/dev/null || true
   exec node /usr/local/bin/security.mjs
