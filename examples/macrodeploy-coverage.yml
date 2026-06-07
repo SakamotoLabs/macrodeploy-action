@@ -1,0 +1,18 @@
+# Test-coverage audit: the dashboard dispatches this to judge whether the code
+# has sufficient unit/e2e coverage and post the gaps as a "MacroDeploy coverage"
+# check. Copy to .github/workflows/macrodeploy-coverage.yml. Needs ANTHROPIC_API_KEY.
+name: MacroDeploy Coverage
+on:
+  workflow_dispatch:
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sakamotolabs/macrodeploy-action@v1
+        with:
+          mode: coverage
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}

@@ -1,0 +1,42 @@
+# Automated QA: the dashboard dispatches this to build & start the app, run any
+# existing Playwright/Cypress E2E, then drive a headless Chrome through the app
+# with Claude to find broken pages/flows. Results post as a "MacroDeploy QA"
+# check; screenshots upload as a run artifact. Copy to
+# .github/workflows/macrodeploy-qa.yml. Needs the ANTHROPIC_API_KEY secret.
+name: MacroDeploy QA
+on:
+  workflow_dispatch:
+    inputs:
+      start_command:
+        description: "Command to build & start the app (blank = auto-detect)"
+        required: false
+        default: ""
+      app_port:
+        description: "Port the app listens on"
+        required: false
+        default: "3000"
+      instructions:
+        description: "Specific flows/areas to focus on (optional)"
+        required: false
+        default: ""
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sakamotolabs/macrodeploy-action@v1
+        with:
+          mode: qa
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          start_command: ${{ inputs.start_command }}
+          app_port: ${{ inputs.app_port }}
+          qa_instructions: ${{ inputs.instructions }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-screenshots
+          path: qa-screenshots/
+          if-no-files-found: ignore

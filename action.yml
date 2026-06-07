@@ -27,7 +27,7 @@ inputs:
     required: false
     default: ${{ github.token }}
   mode:
-    description: "verify (PR gate + review) or implement (issue→PR agent)."
+    description: "verify (PR gate + review), implement (issue→PR), fix, security, coverage (test-coverage audit), or qa (headless Chrome QA)."
     required: false
     default: "verify"
   issue_number:
@@ -46,6 +46,18 @@ inputs:
     description: "PR number (fix mode)."
     required: false
     default: ""
+  start_command:
+    description: "QA mode: command to build & start the app (blank = auto-detect Next/Vite/CRA)."
+    required: false
+    default: ""
+  app_port:
+    description: "QA mode: port the app listens on."
+    required: false
+    default: "3000"
+  qa_instructions:
+    description: "QA mode: specific flows or areas to focus the browser test on (optional)."
+    required: false
+    default: ""
 
 runs:
   using: "docker"
@@ -60,4 +72,7 @@ runs:
     INPUT_ISSUE_TITLE: ${{ inputs.issue_title }}
     INPUT_ISSUE_BODY: ${{ inputs.issue_body }}
     INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+    INPUT_START_COMMAND: ${{ inputs.start_command }}
+    INPUT_APP_PORT: ${{ inputs.app_port }}
+    INPUT_QA_INSTRUCTIONS: ${{ inputs.qa_instructions }}
     GITHUB_TOKEN: ${{ inputs.github_token }}
