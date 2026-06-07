@@ -113,3 +113,9 @@ REVIEW_BASE_REF="$BASE_REF" REVIEW_HEAD_SHA="$NEW_SHA" REVIEW_PR_NUMBER="$PR" \
   INPUT_ANTHROPIC_API_KEY="$KEY" INPUT_MODEL="$MODEL" \
   node /usr/local/bin/review.mjs || true
 echo "::endgroup::"
+
+echo "::group::Auto-merge"
+# shellcheck source=/dev/null
+source /usr/local/bin/automerge.sh
+maybe_automerge "$PR" "$CONCL" "$BASE_REF" "$NEW_SHA"
+echo "::endgroup::"

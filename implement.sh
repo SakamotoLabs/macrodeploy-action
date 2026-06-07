@@ -35,9 +35,10 @@ PROMPT="You are implementing GitHub issue #${NUM}: \"${TITLE}\".
 ${BODY}
 
 Make minimal, correct edits to the files in this repository to satisfy the issue.
-Add or update tests where it makes sense. Do NOT use git and do NOT open a pull
-request — only edit files. Keep the change focused. End your reply with a 1-3
-sentence summary of what you implemented."
+ALWAYS add or update a test that exercises this change — this is required, and
+ideally it would fail without your change and pass with it. Do NOT use git and do
+NOT open a pull request — only edit files. Keep the change focused. End your reply
+with a 1-3 sentence summary of what you implemented."
 # Docker actions run as root, where --dangerously-skip-permissions is refused.
 # acceptEdits auto-approves file create/edit (Write/Edit) without prompts.
 SUMMARY=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
@@ -102,4 +103,10 @@ echo "::group::Review (agent code)"
 REVIEW_BASE_REF="$DEFAULT" REVIEW_HEAD_SHA="$HEAD_SHA" REVIEW_PR_NUMBER="$PR_NUM" \
   INPUT_ANTHROPIC_API_KEY="$KEY" INPUT_MODEL="$MODEL" \
   node /usr/local/bin/review.mjs || true
+echo "::endgroup::"
+
+echo "::group::Auto-merge"
+# shellcheck source=/dev/null
+source /usr/local/bin/automerge.sh
+maybe_automerge "$PR_NUM" "$CONCL" "$DEFAULT" "$HEAD_SHA"
 echo "::endgroup::"

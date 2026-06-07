@@ -30,6 +30,7 @@ COPY review.mjs /usr/local/bin/review.mjs
 COPY security.mjs /usr/local/bin/security.mjs
 COPY coverage.mjs /usr/local/bin/coverage.mjs
 COPY recommend.mjs /usr/local/bin/recommend.mjs
+COPY automerge.sh /usr/local/bin/automerge.sh
 COPY plan.mjs /usr/local/bin/plan.mjs
 COPY qa.mjs /usr/local/bin/qa.mjs
 RUN chmod +x /usr/local/bin/verify.sh /usr/local/bin/entrypoint.sh /usr/local/bin/implement.sh /usr/local/bin/fix.sh
