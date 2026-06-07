@@ -65,6 +65,18 @@ try {
   /* best-effort */
 }
 
+// The review rubric (correctness bar, severity calibration, confidence/false-
+// positive discipline) is injected as the system prompt — distilled from the
+// ea-core `code-review` skill so the cloud reviewer follows the same standard a
+// local Claude Code session would. Optional; absent file → no system prompt.
+const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
+let SYSTEM = "";
+try {
+  SYSTEM = readFileSync(`${SKILLS_DIR}/code-review.md`, "utf8");
+} catch {
+  /* no skill pack → fall back to the user prompt alone */
+}
+
 const PROMPT = `Review this pull request. Respond with ONLY JSON (no prose, no code fences) of the form:
 {"summary": "<2-4 sentence overall verdict>",
  "findings": [{"path": "<repo-relative file>", "line": <int line in the new file>, "level": "notice|warning|failure", "comment": "<concrete issue + fix>"}]}
@@ -90,7 +102,13 @@ async function anthropic() {
     },
     // temperature 0 → stable, repeatable reviews (severity/findings don't drift
     // run-to-run on the same code), which matters for the fix → re-review loop.
-    body: JSON.stringify({ model: MODEL, max_tokens: 1500, temperature: 0, messages: [{ role: "user", content: PROMPT }] }),
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1500,
+      temperature: 0,
+      ...(SYSTEM ? { system: SYSTEM } : {}),
+      messages: [{ role: "user", content: PROMPT }],
+    }),
   });
   const data = await res.json();
   const text = data?.content?.[0]?.text ?? "";

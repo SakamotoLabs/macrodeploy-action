@@ -34,6 +34,10 @@ COPY recommend.mjs /usr/local/bin/recommend.mjs
 COPY automerge.sh /usr/local/bin/automerge.sh
 COPY plan.mjs /usr/local/bin/plan.mjs
 COPY qa.mjs /usr/local/bin/qa.mjs
+# Skill pack: review/audit rubrics distilled from the ea-core skills, injected as
+# system prompts so the cloud agent reviews to the same standard as a local
+# Claude Code session. Read at runtime from MACRODEPLOY_SKILLS_DIR.
+COPY skills/ /usr/local/share/macrodeploy/skills/
 RUN chmod +x /usr/local/bin/verify.sh /usr/local/bin/entrypoint.sh /usr/local/bin/implement.sh /usr/local/bin/fix.sh /usr/local/bin/review-pr.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

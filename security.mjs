@@ -2,6 +2,7 @@
 // "MacroDeploy security" Check on the default-branch HEAD. Triggered by
 // workflow_dispatch. Self-contained (only ANTHROPIC_API_KEY). Best-effort.
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const KEY = process.env.INPUT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || "";
 const MODEL = process.env.INPUT_MODEL || "claude-sonnet-4-6";
@@ -47,11 +48,23 @@ const PROMPT = `Audit this repository for security vulnerabilities — injection
 {"summary":"<3-5 sentence overall security posture>","findings":[{"path":"<repo-relative file>","line":<int>,"level":"notice|warning|failure","comment":"<issue + fix>"}]}
 Use "failure" only for exploitable issues. Empty findings array if the code looks secure.`;
 
+// Inject the ea-core `security-review` rubric (attack surfaces, severity
+// calibration, red flags, confidence bar) as the system prompt, so the cloud
+// audit holds the same standard a local Claude Code session would.
+const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
+let SYSTEM = "";
+try {
+  SYSTEM = readFileSync(`${SKILLS_DIR}/security-review.md`, "utf8");
+} catch {
+  /* no skill pack → default system prompt */
+}
+
 process.env.ANTHROPIC_API_KEY = KEY;
 const res = spawnSync(
   "claude",
   ["-p", PROMPT, "--model", MODEL, "--permission-mode", "acceptEdits",
-   "--allowedTools", "Read,Grep,Glob", "--output-format", "json"],
+   "--allowedTools", "Read,Grep,Glob", "--output-format", "json",
+   ...(SYSTEM ? ["--append-system-prompt", SYSTEM] : [])],
   { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
 );
 const rawOut = (res.stdout || "") + "";

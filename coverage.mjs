@@ -3,6 +3,7 @@
 // "MacroDeploy coverage" Check on the default-branch HEAD. Triggered by
 // workflow_dispatch. Self-contained (only ANTHROPIC_API_KEY). Best-effort.
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const KEY = process.env.INPUT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || "";
 const MODEL = process.env.INPUT_MODEL || "claude-sonnet-4-6";
@@ -57,11 +58,22 @@ Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<4-6 sentences: framework(s) found, rough coverage level (none/low/partial/good), and the biggest gaps>","grade":"none|low|partial|good","findings":[{"path":"<repo-relative source file that needs tests>","line":<int line of the untested function/area>,"level":"notice|warning|failure","comment":"<what is untested + what test to add>"}]}
 Use "failure" only for critical untested logic (auth, payments, data mutations, security-sensitive paths). Point findings at the SOURCE file needing tests, not the test file. Empty findings array if coverage is genuinely good.`;
 
+// Inject the ea-core `coverage` rubric (where coverage matters, what counts as
+// a real gap, weak-test smells, severity calibration) as the system prompt.
+const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
+let SYSTEM = "";
+try {
+  SYSTEM = readFileSync(`${SKILLS_DIR}/coverage.md`, "utf8");
+} catch {
+  /* no skill pack → default system prompt */
+}
+
 process.env.ANTHROPIC_API_KEY = KEY;
 const res = spawnSync(
   "claude",
   ["-p", PROMPT, "--model", MODEL, "--permission-mode", "acceptEdits",
-   "--allowedTools", "Read,Grep,Glob", "--output-format", "json"],
+   "--allowedTools", "Read,Grep,Glob", "--output-format", "json",
+   ...(SYSTEM ? ["--append-system-prompt", SYSTEM] : [])],
   { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
 );
 const rawOut = (res.stdout || "") + "";
