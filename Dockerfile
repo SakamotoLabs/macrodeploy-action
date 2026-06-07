@@ -11,11 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm install -g @anthropic-ai/claude-code
 
 # QA mode drives a headless Chrome through the running app via the Playwright MCP
-# server (and can run the repo's own Playwright/Cypress E2E). Bundle Chromium and
-# its OS libraries so the action stays self-contained.
-RUN npm install -g @playwright/mcp@latest playwright@latest \
-    && npx --yes playwright install --with-deps chromium \
+# server (and can run the repo's own Playwright/Cypress E2E). Install a real
+# Chromium from Debian and point the MCP at it via --executable-path, so we don't
+# depend on Playwright's separately-managed chrome-for-testing download at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends chromium \
+    && npm install -g @playwright/mcp@latest playwright@latest \
     && rm -rf /var/lib/apt/lists/*
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY verify.sh /usr/local/bin/verify.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

@@ -152,11 +152,21 @@ if (up) {
 // ── 4. AI exploratory QA via Claude + Playwright MCP ────────────────────────
 if (up && KEY) {
   log("running AI exploratory QA");
+  // Use the Debian Chromium baked into the image (CHROME_BIN), falling back to
+  // Playwright's managed download. --executable-path makes the MCP use it directly.
+  const chromePath = process.env.CHROME_BIN || "/usr/bin/chromium";
   const mcpConfig = {
     mcpServers: {
       playwright: {
         command: "npx",
-        args: ["@playwright/mcp@latest", "--headless", "--browser", "chromium", "--isolated", "--output-dir", SCREENS],
+        args: [
+          "@playwright/mcp@latest",
+          "--headless",
+          "--browser", "chromium",
+          "--executable-path", chromePath,
+          "--isolated",
+          "--output-dir", SCREENS,
+        ],
       },
     },
   };
