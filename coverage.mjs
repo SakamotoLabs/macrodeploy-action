@@ -14,8 +14,35 @@ function bail(m) {
   console.log(`coverage: ${m}`);
   process.exit(0);
 }
-if (!KEY) bail("no API key");
 if (!TOKEN || !REPO || !SHA) bail("missing GitHub context");
+
+async function postCheck(conclusion, summary) {
+  await fetch(`https://api.github.com/repos/${REPO}/check-runs`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${TOKEN}`,
+      accept: "application/vnd.github+json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "MacroDeploy coverage",
+      head_sha: SHA,
+      status: "completed",
+      conclusion,
+      output: { title: "Test coverage audit", summary },
+    }),
+  }).catch(() => {});
+}
+
+// No key → post a clear "needs key" result instead of a silent green no-op.
+if (!KEY) {
+  await postCheck(
+    "neutral",
+    "⚠️ No `ANTHROPIC_API_KEY` is set on this repository, so the coverage audit couldn't run.\n\n" +
+      "Add your Anthropic key — in MacroDeploy: **dashboard → Set key**; or on GitHub: **Settings → Secrets and variables → Actions → New secret `ANTHROPIC_API_KEY`** — then run the audit again.",
+  );
+  bail("no API key — posted needs-key check");
+}
 
 const PROMPT = `You are a senior engineer auditing this repository's automated test coverage. Read the source tree and the existing tests as needed.
 

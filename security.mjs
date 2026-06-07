@@ -13,8 +13,35 @@ function bail(m) {
   console.log(`security: ${m}`);
   process.exit(0);
 }
-if (!KEY) bail("no API key");
 if (!TOKEN || !REPO || !SHA) bail("missing GitHub context");
+
+async function postCheck(conclusion, summary) {
+  await fetch(`https://api.github.com/repos/${REPO}/check-runs`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${TOKEN}`,
+      accept: "application/vnd.github+json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "MacroDeploy security",
+      head_sha: SHA,
+      status: "completed",
+      conclusion,
+      output: { title: "Security audit", summary },
+    }),
+  }).catch(() => {});
+}
+
+// No key → post a clear "needs key" result instead of a silent green no-op.
+if (!KEY) {
+  await postCheck(
+    "neutral",
+    "⚠️ No `ANTHROPIC_API_KEY` is set on this repository, so the security audit couldn't run.\n\n" +
+      "Add your Anthropic key — in MacroDeploy: **dashboard → Set key**; or on GitHub: **Settings → Secrets and variables → Actions → New secret `ANTHROPIC_API_KEY`** — then run the audit again.",
+  );
+  bail("no API key — posted needs-key check");
+}
 
 const PROMPT = `Audit this repository for security vulnerabilities — injection (SQL/command), broken authn/authz, hardcoded secrets, SSRF, path traversal, unsafe deserialization, missing input validation, and risky dependencies. Read the source as needed. Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<3-5 sentence overall security posture>","findings":[{"path":"<repo-relative file>","line":<int>,"level":"notice|warning|failure","comment":"<issue + fix>"}]}
