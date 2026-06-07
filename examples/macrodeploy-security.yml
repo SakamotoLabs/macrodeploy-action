@@ -1,0 +1,18 @@
+# Security audit: the dashboard dispatches this to audit the repo for
+# vulnerabilities and post the findings as a "MacroDeploy security" check.
+# Copy to .github/workflows/macrodeploy-security.yml. Needs the ANTHROPIC_API_KEY secret.
+name: MacroDeploy Security
+on:
+  workflow_dispatch:
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sakamotolabs/macrodeploy-action@v1
+        with:
+          mode: security
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
