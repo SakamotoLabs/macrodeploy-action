@@ -9,9 +9,12 @@ set -uo pipefail
 
 cd "${GITHUB_WORKSPACE:-/github/workspace}" || { echo "no workspace"; exit 1; }
 
-# Issue→PR mode: hand off to the agent script and exit.
+# Agent modes hand off to their script and exit.
 if [ "${INPUT_MODE:-verify}" = "implement" ]; then
   exec /usr/local/bin/implement.sh
+fi
+if [ "${INPUT_MODE:-verify}" = "fix" ]; then
+  exec /usr/local/bin/fix.sh
 fi
 
 FAST="${INPUT_FAST:-false}"

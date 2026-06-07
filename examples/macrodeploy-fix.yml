@@ -1,0 +1,26 @@
+# Fix findings: the dashboard dispatches this to have the agent address the AI
+# review on a PR's own branch (a new commit), then re-gate + re-review.
+# Copy to .github/workflows/macrodeploy-fix.yml. Needs the ANTHROPIC_API_KEY secret.
+name: MacroDeploy Fix
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to fix"
+        required: true
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: sakamotolabs/macrodeploy-action@v1
+        with:
+          mode: fix
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          pr_number: ${{ inputs.pr }}
