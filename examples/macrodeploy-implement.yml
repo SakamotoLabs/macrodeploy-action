@@ -1,0 +1,31 @@
+# Issue→PR: label an issue "macrodeploy" and an agent implements it, opens a PR,
+# and that PR runs through the verify gate + AI review (macrodeploy.yml).
+# Copy to .github/workflows/macrodeploy-implement.yml. Needs the ANTHROPIC_API_KEY secret.
+name: MacroDeploy Implement
+on:
+  issues:
+    types: [labeled]
+jobs:
+  implement:
+    if: github.event.label.name == 'macrodeploy'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Implement the change requested in issue #${{ github.event.issue.number }}:
+            "${{ github.event.issue.title }}"
+
+            ${{ github.event.issue.body }}
+
+            Make minimal, correct edits. Create a branch, commit, and open a pull
+            request that closes this issue. Keep the change focused.
+          claude_args: "--max-turns 25 --allowedTools Edit,Write,Read,Bash"

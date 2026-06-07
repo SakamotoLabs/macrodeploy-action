@@ -49,3 +49,10 @@ package.json `verify` script, or a `make verify` target — and that wins.
 
 The verify gate's exit code is the check result; the AI review never fails CI on
 its own.
+
+## Issue→PR (optional)
+
+Add `examples/macrodeploy-implement.yml` as a second workflow and an agent will
+implement labeled issues: label any issue **`macrodeploy`** → it opens a PR that
+implements the issue, which then runs through the gate + review above. Needs the
+`ANTHROPIC_API_KEY` secret.
