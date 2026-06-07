@@ -1,0 +1,24 @@
+# Feature → tasks: the dashboard dispatches this to break a feature description
+# into agent-ready tasks, posted as a "MacroDeploy plan" check. Copy to
+# .github/workflows/macrodeploy-plan.yml. Needs the ANTHROPIC_API_KEY secret.
+name: MacroDeploy Plan
+on:
+  workflow_dispatch:
+    inputs:
+      feature:
+        description: "The feature to break into tasks"
+        required: true
+        default: ""
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sakamotolabs/macrodeploy-action@v1
+        with:
+          mode: plan
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          feature: ${{ inputs.feature }}
