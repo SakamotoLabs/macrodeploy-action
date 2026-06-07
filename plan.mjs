@@ -57,6 +57,8 @@ ${FEATURE}
 
 Each task must be implementable on its own by a coding agent. Give a clear imperative title and a description with enough specifics (which files/areas, the approach, acceptance) to implement without further questions. Prefer 3-7 well-scoped tasks over many tiny ones. Order them so earlier tasks unblock later ones.
 
+Ground every task in what's actually in the repo: before proposing to build something, grep for existing imports/usages/routes/endpoints so you don't recommend building something that already exists. If part of the feature is already implemented, scope tasks to only the missing pieces.
+
 Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<2-4 sentences: your overall approach and sequencing>","tasks":[{"title":"<short imperative title>","detail":"<what to build + which files/areas + approach + acceptance>","priority":"high|medium|low"}]}`;
 

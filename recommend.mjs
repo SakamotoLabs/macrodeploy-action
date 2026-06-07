@@ -54,6 +54,8 @@ Find TWO kinds of items:
 
 For each item: an actionable, specific title and a description a developer could pick up. Anchor to a file path when one applies. Do NOT recommend things that are already fully implemented.
 
+CRITICAL — verify before you claim something is missing, unwired, or has "no entry point". Proving absence requires search: grep for imports, component usages, route definitions, nav links, and call sites across the whole repo before asserting a feature/page/route/endpoint isn't reachable. If you find it wired up ANYWHERE (e.g. a backend endpoint is already called from some page, or a component is already imported), do NOT report it as a gap. A missing literal route path does not mean the feature is unreachable — it may be reached from another page. Prefer false negatives over false positives: when you are not certain after searching, omit the item rather than guess.
+
 Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<4-6 sentences on the product's maturity and the most valuable things to build/finish next>","recommendations":[{"title":"<short imperative title>","detail":"<what + why + rough approach>","category":"gap|opportunity|todo","priority":"high|medium|low","path":"<repo-relative file, or empty string>"}]}
 Order by priority (high first). Aim for 6-15 high-quality, deduped items.`;
