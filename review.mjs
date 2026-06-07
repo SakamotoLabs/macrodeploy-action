@@ -45,6 +45,8 @@ const PROMPT = `Review this pull request diff. Respond with ONLY JSON (no prose,
  "findings": [{"path": "<repo-relative file>", "line": <int line in the new file>, "level": "notice|warning|failure", "comment": "<concrete issue + fix>"}]}
 Flag real correctness/security bugs; skip style nits. Empty findings array if it looks good.
 
+Each "comment" MUST be 1-2 sentences, concrete and FINAL — no reasoning out loud, no "wait", no second-guessing or retracting. Output STRICT, valid JSON: double-quoted strings only, escape any double quote inside a string as \\", and never use a backslash before a single quote.
+
 DIFF:
 ${diff}`;
 
@@ -62,12 +64,18 @@ async function anthropic() {
   const text = data?.content?.[0]?.text ?? "";
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start < 0 || end < 0) return { summary: text || "Review unavailable.", findings: [] };
-  try {
-    return JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return { summary: text, findings: [] };
+  if (start < 0 || end < 0) return { summary: "Review unavailable.", findings: [] };
+  const slice = text.slice(start, end + 1);
+  // Models occasionally emit invalid JSON (e.g. `\'`, a non-JSON escape). Try as-is,
+  // then with that escape cleaned. Never fall back to dumping the raw blob.
+  for (const candidate of [slice, slice.replace(/\\'/g, "'")]) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      /* try next */
+    }
   }
+  return { summary: "Review generated but could not be parsed as JSON.", findings: [] };
 }
 
 function gh(path, body) {
