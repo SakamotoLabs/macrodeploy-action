@@ -33,6 +33,22 @@ clear_needs_human() {
   api -X DELETE "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/labels/needs-human" >/dev/null 2>&1 || true
 }
 
+# Re-gate + re-review the new merge commit, so the resolved PR shows fresh status
+# instead of "no checks" (a GITHUB_TOKEN push doesn't trigger CI on its own).
+post_checks() {
+  local sha="$1"
+  echo "::group::Verify (after resolve)"
+  verify.sh .; local rc=$?
+  echo "::endgroup::"
+  local concl; concl=$([ "$rc" -eq 0 ] && echo success || echo failure)
+  api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs" \
+    -d "$(jq -n --arg s "$sha" --arg c "$concl" '{name:"MacroDeploy gate", head_sha:$s, status:"completed", conclusion:$c, output:{title:"Verify gate", summary:("Gate "+$c+" after resolve.")}}')" >/dev/null 2>&1 || true
+  echo "::group::Review (after resolve)"
+  REVIEW_BASE_REF="$BASE_REF" REVIEW_HEAD_SHA="$sha" REVIEW_PR_NUMBER="$PR" \
+    INPUT_ANTHROPIC_API_KEY="$KEY" INPUT_MODEL="$MODEL" node /usr/local/bin/review.mjs || true
+  echo "::endgroup::"
+}
+
 escalate() {
   api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/labels" \
     -d '{"labels":["needs-human"]}' >/dev/null 2>&1 || true
@@ -80,6 +96,7 @@ if git merge --no-edit "origin/${BASE_REF}"; then
       -d "$(jq -n --arg b "### 🔀 MacroDeploy — brought up to date
 
 Merged \`${BASE_REF}\` into \`${HEAD_REF}\` cleanly (no conflicts). The PR is now mergeable." '{body:$b}')" >/dev/null || true
+    post_checks "$(git rev-parse HEAD)"
     echo "resolve: clean merge pushed"
   else
     api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
@@ -172,3 +189,6 @@ ${SUMMARY:-(see merge commit)}
 ${CONFLICTS}
 
 Pushed commit \`$(echo "$NEW_SHA" | cut -c1-8)\`." '{body:$b}')" >/dev/null && echo "resolve: pushed resolution"
+
+# Re-gate + re-review the merge commit so the PR shows fresh status (not "no checks").
+post_checks "$NEW_SHA"
