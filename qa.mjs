@@ -4,11 +4,13 @@
 // "MacroDeploy QA" Check and saves screenshots to ./qa-screenshots for the
 // workflow to upload as an artifact. Self-contained; best-effort. Manual dispatch.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from "node:fs";
 import net from "node:net";
 
 const KEY = process.env.INPUT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || "";
-const MODEL = process.env.INPUT_MODEL || "claude-sonnet-4-6";
+// QA is an audit — default to the stronger audit-tier model (parity with the
+// security/coverage audits) unless the workflow passes one explicitly.
+const MODEL = process.env.INPUT_MODEL || "claude-opus-4-8";
 const TOKEN = process.env.GITHUB_TOKEN || "";
 const REPO = process.env.GITHUB_REPOSITORY || "";
 const SHA = process.env.GITHUB_SHA || "";
@@ -173,6 +175,19 @@ if (up && KEY) {
   const cfgPath = "/tmp/mcp-playwright.json";
   writeFileSync(cfgPath, JSON.stringify(mcpConfig));
 
+  // QA rubric (how to test, what's a real problem, severity, confidence bar) as
+  // the system prompt; the repo's CLAUDE.md/AGENTS.md is auto-loaded for context.
+  const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
+  let SYSTEM = "";
+  try {
+    SYSTEM = readFileSync(`${SKILLS_DIR}/qa.md`, "utf8");
+  } catch {}
+  // Per-repo memory of accepted non-issues, so QA doesn't re-raise them.
+  let MEMORY = "";
+  try {
+    MEMORY = readFileSync(`${WS}/.macrodeploy/memory.md`, "utf8").slice(0, 6000);
+  } catch {}
+
   const prompt = `You are an automated QA engineer testing a web app already running at ${APP_URL}.
 
 Use the Playwright browser tools to:
@@ -183,17 +198,21 @@ ${INSTRUCTIONS ? `4. Pay special attention to: ${INSTRUCTIONS}` : ""}
 
 Take a screenshot of each major screen, and of anything that looks broken.
 
-Only report REAL problems: blank/error pages, JavaScript console errors, broken or dead buttons/links, clearly broken layout, or flows that fail. Do not invent issues.
+Only report REAL problems: blank/error pages, JavaScript console errors, broken or dead buttons/links, clearly broken layout, or flows that fail. Do not invent issues. Honor the repo's own CLAUDE.md / AGENTS.md conventions.${
+  MEMORY ? `\n\nThese were reviewed before and accepted as non-issues or intended — do NOT raise them again:\n${MEMORY}` : ""
+}
 
 Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<3-5 sentences assessing the app's quality and what you exercised>","issues":[{"severity":"info|warn|fail","area":"<page or flow>","detail":"<what is wrong + how to reproduce>"}]}
 Empty issues array if everything works.`;
 
   process.env.ANTHROPIC_API_KEY = KEY;
+  process.env.MAX_THINKING_TOKENS = process.env.MAX_THINKING_TOKENS || "8000"; // extended thinking
   const res = spawnSync(
     "claude",
     ["-p", prompt, "--model", MODEL, "--permission-mode", "acceptEdits",
-     "--allowedTools", "mcp__playwright", "--mcp-config", cfgPath, "--output-format", "json"],
+     "--allowedTools", "mcp__playwright", "--mcp-config", cfgPath, "--output-format", "json",
+     ...(SYSTEM ? ["--append-system-prompt", SYSTEM] : [])],
     { encoding: "utf8", cwd: WS, timeout: 900000, maxBuffer: 64 * 1024 * 1024 },
   );
   let text = (res.stdout || "") + "";

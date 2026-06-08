@@ -44,9 +44,18 @@ if (!KEY) {
   bail("no API key — posted needs-key check");
 }
 
+// Per-repo memory of accepted non-issues, so the audit doesn't re-flag things a
+// previous round already dismissed.
+let MEMORY = "";
+try {
+  MEMORY = readFileSync(".macrodeploy/memory.md", "utf8").slice(0, 6000);
+} catch {}
+
 const PROMPT = `Audit this repository for security vulnerabilities — injection (SQL/command), broken authn/authz, hardcoded secrets, SSRF, path traversal, unsafe deserialization, missing input validation, and risky dependencies. Read the source as needed. Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<3-5 sentence overall security posture>","findings":[{"path":"<repo-relative file>","line":<int>,"level":"notice|warning|failure","comment":"<issue + fix>"}]}
-Use "failure" only for exploitable issues. Empty findings array if the code looks secure. Honor the repo's own CLAUDE.md / AGENTS.md conventions.`;
+Use "failure" only for exploitable issues. Empty findings array if the code looks secure. Honor the repo's own CLAUDE.md / AGENTS.md conventions.${
+  MEMORY ? `\n\nThese were reviewed before and accepted as non-issues or intended — do NOT flag them again:\n${MEMORY}` : ""
+}`;
 
 // Inject the ea-core `security-review` rubric (attack surfaces, severity
 // calibration, red flags, confidence bar) as the system prompt, so the cloud
@@ -60,6 +69,7 @@ try {
 }
 
 process.env.ANTHROPIC_API_KEY = KEY;
+process.env.MAX_THINKING_TOKENS = process.env.MAX_THINKING_TOKENS || "8000"; // extended thinking
 const res = spawnSync(
   "claude",
   ["-p", PROMPT, "--model", MODEL, "--permission-mode", "acceptEdits",
