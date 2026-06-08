@@ -46,7 +46,7 @@ if (!KEY) {
 
 const PROMPT = `Audit this repository for security vulnerabilities — injection (SQL/command), broken authn/authz, hardcoded secrets, SSRF, path traversal, unsafe deserialization, missing input validation, and risky dependencies. Read the source as needed. Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<3-5 sentence overall security posture>","findings":[{"path":"<repo-relative file>","line":<int>,"level":"notice|warning|failure","comment":"<issue + fix>"}]}
-Use "failure" only for exploitable issues. Empty findings array if the code looks secure.`;
+Use "failure" only for exploitable issues. Empty findings array if the code looks secure. Honor the repo's own CLAUDE.md / AGENTS.md conventions.`;
 
 // Inject the ea-core `security-review` rubric (attack surfaces, severity
 // calibration, red flags, confidence bar) as the system prompt, so the cloud

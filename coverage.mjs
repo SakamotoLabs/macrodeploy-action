@@ -56,7 +56,7 @@ Identify the test framework(s) in use (jest, vitest, pytest, playwright, cypress
 
 Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<4-6 sentences: framework(s) found, rough coverage level (none/low/partial/good), and the biggest gaps>","grade":"none|low|partial|good","findings":[{"path":"<repo-relative source file that needs tests>","line":<int line of the untested function/area>,"level":"notice|warning|failure","comment":"<what is untested + what test to add>"}]}
-Use "failure" only for critical untested logic (auth, payments, data mutations, security-sensitive paths). Point findings at the SOURCE file needing tests, not the test file. Empty findings array if coverage is genuinely good.`;
+Use "failure" only for critical untested logic (auth, payments, data mutations, security-sensitive paths). Point findings at the SOURCE file needing tests, not the test file. Empty findings array if coverage is genuinely good. Honor the repo's own CLAUDE.md / AGENTS.md conventions.`;
 
 // Inject the ea-core `coverage` rubric (where coverage matters, what counts as
 // a real gap, weak-test smells, severity calibration) as the system prompt.

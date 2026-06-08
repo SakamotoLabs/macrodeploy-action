@@ -1,15 +1,24 @@
 // AI review → a GitHub Check Run with inline annotations + a summary.
-// Runs inside the action container (Node 20, global fetch). Best-effort: any
-// failure just logs and exits 0 so it never fails the build (the verify gate does).
-import { execSync } from "node:child_process";
+// Runs inside the action container. Best-effort: any failure just logs and exits
+// 0 so it never fails the build (the verify gate does).
+//
+// Agentic: instead of a single blind API call on the diff, we run the review
+// through the Claude Code CLI WITH Read/Grep/Glob tools, so the reviewer can
+// inspect the rest of the repo to VERIFY a finding before flagging it (e.g.
+// confirm a symbol really is undefined, or that an import is actually missing).
+// This is the main defense against false positives. It also auto-loads the
+// repo's CLAUDE.md/AGENTS.md as project memory, and honors a per-repo memory of
+// previously-accepted non-issues so re-reviews stop re-flagging the same things.
+import { execSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 const KEY = process.env.INPUT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || "";
 const MODEL = process.env.INPUT_MODEL || "claude-sonnet-4-6";
+// For large / complex diffs, escalate to a stronger model + more thinking — the
+// judgment a hard review needs (mirrors running Opus locally on a gnarly PR).
+const DEEP_MODEL = process.env.INPUT_REVIEW_DEEP_MODEL || "claude-opus-4-8";
 const TOKEN = process.env.GITHUB_TOKEN || "";
 const REPO = process.env.GITHUB_REPOSITORY || "";
-// REVIEW_BASE_REF / REVIEW_HEAD_SHA let the implement flow review the agent's
-// own commit; otherwise fall back to the pull_request context.
 const BASE = process.env.REVIEW_BASE_REF || process.env.GITHUB_BASE_REF || "";
 const EVENT_PATH = process.env.GITHUB_EVENT_PATH || "";
 
@@ -34,90 +43,71 @@ if (!process.env.REVIEW_HEAD_SHA) {
 let diff = "";
 try {
   diff = execSync(`git diff --no-color origin/${BASE}...HEAD`, { encoding: "utf8", maxBuffer: 20e6 });
-} catch (e) {
+} catch {
   bail("could not compute diff");
 }
 if (!diff.trim()) bail("empty diff");
-diff = diff.slice(0, 35000);
+const fileCount = (diff.match(/^diff --git/gm) || []).length;
+const big = diff.length > 12000 || fileCount > 8;
+diff = diff.slice(0, 40000);
 
-// Full content of changed files (capped) so the reviewer can SEE imports,
-// helpers, and definitions that live outside the diff hunks — this is what
-// prevents false positives like "is X imported?" when X is imported elsewhere.
-let context = "";
+// Per-repo memory of accepted non-issues / conventions, so the reviewer doesn't
+// re-flag things a previous round already dismissed (the closest analog to a
+// local session's memory). Written by the fix flow when it dismisses a finding.
+let memory = "";
 try {
-  const files = execSync(`git diff --name-only origin/${BASE}...HEAD`, { encoding: "utf8" })
-    .split("\n")
-    .filter(Boolean);
-  let budget = 45000;
-  for (const f of files) {
-    let body = "";
-    try {
-      body = readFileSync(f, "utf8");
-    } catch {
-      continue; // deleted/binary
-    }
-    const chunk = `\n\n===== FILE: ${f} =====\n${body}`;
-    if (chunk.length > budget) break;
-    context += chunk;
-    budget -= chunk.length;
-  }
-} catch {
-  /* best-effort */
-}
+  memory = readFileSync(".macrodeploy/memory.md", "utf8").slice(0, 6000);
+} catch {}
 
-// The review rubric (correctness bar, severity calibration, confidence/false-
-// positive discipline) is injected as the system prompt — distilled from the
-// ea-core `code-review` skill so the cloud reviewer follows the same standard a
-// local Claude Code session would. Optional; absent file → no system prompt.
+// Review rubric (severity calibration + confidence/false-positive bar), distilled
+// from the ea-core `code-review` skill, injected as the system prompt.
 const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
 let SYSTEM = "";
 try {
   SYSTEM = readFileSync(`${SKILLS_DIR}/code-review.md`, "utf8");
-} catch {
-  /* no skill pack → fall back to the user prompt alone */
-}
+} catch {}
 
-const PROMPT = `Review this pull request. Respond with ONLY JSON (no prose, no code fences) of the form:
+const PROMPT = `Review the pull request diff below. You have Read, Grep, and Glob tools — USE them to inspect the rest of the repository and VERIFY before flagging. Before raising "X is undefined/unimported/missing", actually look: grep for X, open the file. If it exists, do not flag it. This verification step is mandatory.
+
+Follow the repository's own conventions — its CLAUDE.md / AGENTS.md and the patterns already in the code. Flag only issues INTRODUCED by this diff; never pre-existing code.
+${memory ? `\nThese were reviewed before and accepted as non-issues or intended conventions — do NOT flag them again:\n${memory}\n` : ""}
+When done, respond with ONLY JSON (no prose, no code fences) as your final message:
 {"summary": "<2-4 sentence overall verdict>",
- "findings": [{"path": "<repo-relative file>", "line": <int line in the new file>, "level": "notice|warning|failure", "comment": "<concrete issue + fix>"}]}
-Flag real correctness/security bugs; skip style nits. Empty findings array if it looks good.
-
-Only flag issues introduced by the DIFF. Use the FULL FILES below for context so you DON'T raise false positives about things that already exist outside the diff (e.g. an import, helper, or type that's present elsewhere in the file). If you're tempted to say "ensure X is imported/defined", first check the full file — if it's there, do not flag it.
-
-Each "comment" MUST be 1-2 sentences, concrete and FINAL — no reasoning out loud, no "wait", no second-guessing or retracting. Output STRICT, valid JSON: double-quoted strings only, escape any double quote inside a string as \\", and never use a backslash before a single quote.
+ "findings": [{"path": "<repo-relative file>", "line": <int line in the new file>, "level": "notice|warning|failure", "comment": "<concrete issue + fix, 1-2 sentences, final — no thinking out loud>"}]}
+Empty findings array if it looks good. Output STRICT valid JSON: double-quoted strings, escape any inner double quote as \\", never backslash before a single quote.
 
 DIFF:
-${diff}
+${diff}`;
 
-FULL FILES (context only — do not flag pre-existing code):
-${context}`;
-
-async function anthropic() {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
+function runReview() {
+  const useModel = big ? DEEP_MODEL : MODEL;
+  // Claude Code reads MAX_THINKING_TOKENS to size extended thinking; give complex
+  // reviews more room to reason.
+  const thinking = big ? "12000" : "4000";
+  const res = spawnSync(
+    "claude",
+    ["-p", PROMPT, "--model", useModel, "--permission-mode", "acceptEdits",
+     "--allowedTools", "Read,Grep,Glob", "--output-format", "json",
+     ...(SYSTEM ? ["--append-system-prompt", SYSTEM] : [])],
+    {
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      env: { ...process.env, ANTHROPIC_API_KEY: KEY, MAX_THINKING_TOKENS: thinking },
     },
-    // temperature 0 → stable, repeatable reviews (severity/findings don't drift
-    // run-to-run on the same code), which matters for the fix → re-review loop.
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1500,
-      temperature: 0,
-      ...(SYSTEM ? { system: SYSTEM } : {}),
-      messages: [{ role: "user", content: PROMPT }],
-    }),
-  });
-  const data = await res.json();
-  const text = data?.content?.[0]?.text ?? "";
+  );
+  console.log(`review: model=${useModel} thinking=${thinking} files=${fileCount}`);
+  let text = res.stdout || "";
+  // claude --output-format json → { result: "<assistant text>", ... }
+  try {
+    const env = JSON.parse(text);
+    text = env.result || env.text || text;
+  } catch {
+    /* not enveloped — treat as raw text */
+  }
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end < 0) return { summary: "Review unavailable.", findings: [] };
   const slice = text.slice(start, end + 1);
-  // Models occasionally emit invalid JSON (e.g. `\'`, a non-JSON escape). Try as-is,
-  // then with that escape cleaned. Never fall back to dumping the raw blob.
   for (const candidate of [slice, slice.replace(/\\'/g, "'")]) {
     try {
       return JSON.parse(candidate);
@@ -140,7 +130,7 @@ function gh(path, body) {
   });
 }
 
-const review = await anthropic();
+const review = runReview();
 const findings = Array.isArray(review.findings) ? review.findings : [];
 const annotations = findings
   .filter((f) => f && f.path && f.line)
@@ -171,8 +161,7 @@ if (!res.ok) {
   console.log(`review: posted check with ${annotations.length} annotation(s)`);
 }
 
-// Also document the review as a PR comment so the trail is visible in the PR,
-// not just in Checks. PR number: explicit (implement/fix) or the PR event.
+// Also document the review as a PR comment so the trail is visible in the PR.
 let prNum = process.env.REVIEW_PR_NUMBER || "";
 if (!prNum && EVENT_PATH) {
   try {

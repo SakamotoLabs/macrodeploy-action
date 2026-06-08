@@ -22,6 +22,12 @@ git config --global --add safe.directory "$PWD" 2>/dev/null || true
 # shellcheck source=/dev/null
 source /usr/local/bin/scoped-tests.sh
 
+# Coding rubric (root-cause → test-first → verify) as the system prompt; the
+# repo's CLAUDE.md / AGENTS.md is auto-loaded by Claude Code for project context.
+SYS_ARGS=()
+[ -f /usr/local/share/macrodeploy/skills/fixing.md ] \
+  && SYS_ARGS=(--append-system-prompt "$(cat /usr/local/share/macrodeploy/skills/fixing.md)")
+
 echo "::group::Install dependencies"
 if [ -f package.json ]; then
   corepack enable >/dev/null 2>&1 || true
@@ -56,7 +62,7 @@ End your reply with a 1-3 sentence summary, then on the VERY LAST line exactly o
 # acceptEdits auto-approves Write/Edit; Bash is allowlisted so the agent can run
 # the targeted tests for the red→green loop.
 RAW=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
-  --allowedTools "Edit,Write,Read,Bash,Grep,Glob" 2>/dev/null) || echo "(agent run returned non-zero)"
+  --allowedTools "Edit,Write,Read,Bash,Grep,Glob" "${SYS_ARGS[@]}" 2>/dev/null) || echo "(agent run returned non-zero)"
 VERDICT=$(printf '%s\n' "$RAW" | grep -oE 'MACRODEPLOY_VERIFY=(pass|fail|none)' | tail -1 | cut -d= -f2)
 SUMMARY=$(printf '%s\n' "$RAW" | grep -v 'MACRODEPLOY_VERIFY=')
 echo "$SUMMARY"

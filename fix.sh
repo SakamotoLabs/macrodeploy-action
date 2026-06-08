@@ -21,6 +21,14 @@ api() { curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: applicati
 # shellcheck source=/dev/null
 source /usr/local/bin/scoped-tests.sh
 
+# Coding rubric (root-cause → test-first → verify) injected as the system prompt;
+# distilled from the ea-core systematic-debugging / TDD / verification skills.
+# The repo's own CLAUDE.md / AGENTS.md is auto-loaded by Claude Code as project
+# memory, so the agent also follows the project's conventions.
+SYS_ARGS=()
+[ -f /usr/local/share/macrodeploy/skills/fixing.md ] \
+  && SYS_ARGS=(--append-system-prompt "$(cat /usr/local/share/macrodeploy/skills/fixing.md)")
+
 PRJSON=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PR}")
 HEAD_REF=$(echo "$PRJSON" | jq -r '.head.ref')
 BASE_REF=$(echo "$PRJSON" | jq -r '.base.ref')
@@ -84,7 +92,7 @@ line exactly one of:
 FINDINGS:
 ${FINDINGS}"
 RAW=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
-  --allowedTools "Edit,Write,Read,Bash,Grep,Glob" 2>/dev/null) || echo "(agent run returned non-zero)"
+  --allowedTools "Edit,Write,Read,Bash,Grep,Glob" "${SYS_ARGS[@]}" 2>/dev/null) || echo "(agent run returned non-zero)"
 # Split the machine verdict off the human-facing summary.
 VERDICT=$(printf '%s\n' "$RAW" | grep -oE 'MACRODEPLOY_VERIFY=(pass|fail|none)' | tail -1 | cut -d= -f2)
 SUMMARY=$(printf '%s\n' "$RAW" | grep -v 'MACRODEPLOY_VERIFY=')
@@ -94,6 +102,28 @@ echo "::endgroup::"
 
 if [ -z "$(git status --porcelain)" ]; then
   echo "fix: agent made no changes"
+
+  # Record the dismissed findings as known non-issues in the repo's MacroDeploy
+  # memory, so future reviews (which read .macrodeploy/memory.md) stop re-flagging
+  # them — this is what stops the re-review churn. Commit just that file to the PR
+  # branch; it merges to the default branch when the PR lands. (A GITHUB_TOKEN
+  # push doesn't re-trigger workflows, so no loop.)
+  CLEAR_SHA="$HEAD_SHA"
+  mkdir -p .macrodeploy
+  {
+    printf '\n### Dismissed %s (PR #%s)\n' "$(date -u +%Y-%m-%d)" "$PR"
+    printf '%s\n' "$FINDINGS"
+    printf '_Assessed by the fix agent as non-issues / intended behavior._\n'
+  } >> .macrodeploy/memory.md
+  git config user.name "macrodeploy[bot]"
+  git config user.email "macrodeploy@users.noreply.github.com"
+  git add .macrodeploy/memory.md
+  if git commit -q -m "MacroDeploy: record dismissed findings as known non-issues (#${PR})" \
+     && git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"; then
+    CLEAR_SHA=$(git rev-parse HEAD)
+    echo "fix: recorded non-issues to .macrodeploy/memory.md"
+  fi
+
   api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
     -d "$(jq -n --arg b "### 🔧 MacroDeploy fix — no change needed
 
@@ -102,16 +132,17 @@ The agent assessed the findings and decided no code change was required (e.g. th
 ${SUMMARY:-(no detail provided)}
 
 **Findings considered:**
-${FINDINGS}" '{body:$b}')" >/dev/null || true
+${FINDINGS}
 
-  # The agent reviewed the significant findings and required no change → clear
-  # them so they stop showing as outstanding (keep notices). Posts a fresh review
-  # check on the same commit; the dashboard reads the latest one.
+_Recorded as known non-issues in \`.macrodeploy/memory.md\` so they won't be re-flagged._" '{body:$b}')" >/dev/null || true
+
+  # Clear the dismissed findings (keep notices) by posting a fresh review check on
+  # the current head; the dashboard reads the latest one.
   if [ -n "$CID" ] && [ "$CID" != "null" ]; then
     KEEP=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs/${CID}/annotations" \
       | jq '[.[] | select(.annotation_level=="notice") | {path, start_line, end_line, annotation_level, message}]')
     api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs" \
-      -d "$(jq -n --argjson ann "${KEEP:-[]}" --arg s "$HEAD_SHA" '{name:"MacroDeploy review", head_sha:$s, status:"completed", conclusion:"success", output:{title:"MacroDeploy review", summary:"Earlier findings were assessed by the fix agent and required no change — cleared. See the fix comment for the reasoning.", annotations:$ann}}')" \
+      -d "$(jq -n --argjson ann "${KEEP:-[]}" --arg s "$CLEAR_SHA" '{name:"MacroDeploy review", head_sha:$s, status:"completed", conclusion:"success", output:{title:"MacroDeploy review", summary:"Earlier findings were assessed by the fix agent and required no change — cleared. See the fix comment for the reasoning.", annotations:$ann}}')" \
       >/dev/null && echo "fix: cleared dismissed findings"
   fi
   exit 0
