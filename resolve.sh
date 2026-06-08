@@ -29,6 +29,10 @@ SYS_ARGS=()
 
 api() { curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "$@"; }
 
+clear_needs_human() {
+  api -X DELETE "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/labels/needs-human" >/dev/null 2>&1 || true
+}
+
 escalate() {
   api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/labels" \
     -d '{"labels":["needs-human"]}' >/dev/null 2>&1 || true
@@ -68,6 +72,7 @@ git config user.email "macrodeploy@users.noreply.github.com"
 echo "::group::Merge base (${BASE_REF}) into ${HEAD_REF}"
 if git merge --no-edit "origin/${BASE_REF}"; then
   echo "::endgroup::"
+  clear_needs_human # no conflicts → clear any prior escalation
   # Clean merge (the branch was just behind, no conflicts).
   if [ -n "$(git log "origin/${HEAD_REF}..HEAD" --oneline 2>/dev/null)" ]; then
     git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"
@@ -137,6 +142,7 @@ git add -A
 git commit --no-edit -q
 git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"
 NEW_SHA=$(git rev-parse HEAD)
+clear_needs_human # resolved → clear any prior escalation (re-added below if tests fail)
 
 # Sanity-check with the scoped tests — BEST EFFORT. The repo's runtime may not be
 # available in CI, so a failure/inability here is a flag for the human, not a
