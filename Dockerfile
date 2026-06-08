@@ -32,6 +32,7 @@ COPY review.mjs /usr/local/bin/review.mjs
 COPY review-pr.sh /usr/local/bin/review-pr.sh
 COPY security.mjs /usr/local/bin/security.mjs
 COPY coverage.mjs /usr/local/bin/coverage.mjs
+COPY deploy-audit.mjs /usr/local/bin/deploy-audit.mjs
 COPY recommend.mjs /usr/local/bin/recommend.mjs
 COPY automerge.sh /usr/local/bin/automerge.sh
 COPY plan.mjs /usr/local/bin/plan.mjs
