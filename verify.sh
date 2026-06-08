@@ -97,6 +97,56 @@ check_node() { # check_node <dir>
   cd "$ROOT"
 }
 
+# Alembic guard: multiple migration heads make `alembic upgrade head` fail at
+# deploy time — and they only appear once two branch-adding PRs both land on the
+# default branch, so neither PR's own gate catches it. Count heads by parsing the
+# version files directly (no DB / no alembic env needed) and fail if > 1.
+check_alembic() { # check_alembic <versions_dir>
+  local vdir="$1" rel="${1#./}" n
+  n=$(python3 - "$vdir" <<'PY' 2>/dev/null
+import ast, sys, pathlib
+revs = {}
+for f in pathlib.Path(sys.argv[1]).glob("*.py"):
+    try:
+        tree = ast.parse(f.read_text())
+    except Exception:
+        continue
+    rev, downs = None, []
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names, val = [node.target.id], node.value
+        elif isinstance(node, ast.Assign):
+            names, val = [t.id for t in node.targets if isinstance(t, ast.Name)], node.value
+        else:
+            continue
+        try:
+            value = ast.literal_eval(val) if val is not None else None
+        except Exception:
+            value = None
+        if names == ["revision"]:
+            rev = value
+        elif names == ["down_revision"]:
+            if value is None: downs = []
+            elif isinstance(value, (list, tuple)): downs = [d for d in value if isinstance(d, str)]
+            elif isinstance(value, str): downs = [value]
+    if isinstance(rev, str):
+        revs[rev] = downs
+referenced = {d for downs in revs.values() for d in downs}
+heads = [r for r in revs if r not in referenced]
+print(len(heads))
+for h in heads:
+    print("  head:", h, file=sys.stderr)
+PY
+)
+  if [ "${n:-1}" -gt 1 ]; then
+    FAIL+=("[$rel] alembic: $n heads")
+    printf '\n%s✗ [%s] alembic has %s migration heads — run `alembic merge heads` (a parallel-merged PR split the migration tree)%s\n' "$c_red" "$rel" "$n" "$c_rst"
+  elif [ "${n:-0}" = "1" ]; then
+    PASS+=("[$rel] alembic single head")
+    printf '%s✓ [%s] alembic single head%s\n' "$c_grn" "$rel" "$c_rst"
+  fi
+}
+
 check_python() { # check_python <dir>
   cd "$ROOT/$1" || return
   local rel="$1"; [ "$rel" = "." ] && rel="root"
