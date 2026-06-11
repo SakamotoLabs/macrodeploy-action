@@ -36,6 +36,18 @@ if [ -f package.json ]; then
   elif [ -f package-lock.json ]; then npm ci || npm install
   else npm install; fi
 fi
+# Python deps — monorepo-aware (install subdir backends too), so the agent's
+# test-first loop and the verify gate both have the dev/test group available.
+while IFS= read -r _pf; do
+  _d=$(dirname "$_pf")
+  if [ -f "$_d/poetry.lock" ] || grep -qs '^\[tool\.poetry\]' "$_pf"; then
+    python3 -m pip install --quiet --break-system-packages poetry >/dev/null 2>&1 || true
+    ( cd "$_d" && poetry install --no-interaction ) || true
+  fi
+done < <(find . -maxdepth 2 -name pyproject.toml -not -path '*/node_modules/*' 2>/dev/null)
+while IFS= read -r _rf; do
+  ( cd "$(dirname "$_rf")" && python3 -m pip install --quiet --break-system-packages -r requirements.txt ) || true
+done < <(find . -maxdepth 2 -name requirements.txt -not -path '*/node_modules/*' 2>/dev/null)
 echo "::endgroup::"
 
 echo "::group::Agent (Claude Code, test-first)"

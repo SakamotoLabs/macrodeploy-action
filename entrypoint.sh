@@ -64,11 +64,20 @@ if [ -f package.json ]; then
   elif [ -f package-lock.json ];then npm ci || npm install
   else npm install; fi
 fi
-if [ -f poetry.lock ] && [ -f pyproject.toml ]; then
-  python3 -m pip install --quiet --break-system-packages poetry && poetry install --no-interaction || true
-elif [ -f requirements.txt ]; then
-  python3 -m pip install --quiet --break-system-packages -r requirements.txt || true
-fi
+# Python deps — monorepo-aware: install every poetry/pip project up to 2 levels
+# deep (not just the repo root), so a subdir backend (e.g. backend/) gets its full
+# dependency set — including the dev/test group (pytest-asyncio, etc.) the verify
+# gate needs to collect and run the suite.
+while IFS= read -r _pf; do
+  _d=$(dirname "$_pf")
+  if [ -f "$_d/poetry.lock" ] || grep -qs '^\[tool\.poetry\]' "$_pf"; then
+    python3 -m pip install --quiet --break-system-packages poetry >/dev/null 2>&1 || true
+    ( cd "$_d" && poetry install --no-interaction ) || true
+  fi
+done < <(find . -maxdepth 2 -name pyproject.toml -not -path '*/node_modules/*' 2>/dev/null)
+while IFS= read -r _rf; do
+  ( cd "$(dirname "$_rf")" && python3 -m pip install --quiet --break-system-packages -r requirements.txt ) || true
+done < <(find . -maxdepth 2 -name requirements.txt -not -path '*/node_modules/*' 2>/dev/null)
 echo "::endgroup::"
 
 # ── 2. verify gate ──────────────────────────────────────────────────────────
