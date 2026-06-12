@@ -22,6 +22,9 @@ fi
 if [ "${INPUT_MODE:-verify}" = "resolve" ]; then
   exec /usr/local/bin/resolve.sh
 fi
+if [ "${INPUT_MODE:-verify}" = "steer" ]; then
+  exec /usr/local/bin/steer.sh
+fi
 if [ "${INPUT_MODE:-verify}" = "security" ]; then
   git config --global --add safe.directory "$PWD" 2>/dev/null || true
   exec node /usr/local/bin/security.mjs

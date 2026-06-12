@@ -27,6 +27,8 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY implement.sh /usr/local/bin/implement.sh
 COPY fix.sh /usr/local/bin/fix.sh
 COPY resolve.sh /usr/local/bin/resolve.sh
+COPY steer.sh /usr/local/bin/steer.sh
+COPY repo-context.sh /usr/local/bin/repo-context.sh
 COPY scoped-tests.sh /usr/local/bin/scoped-tests.sh
 COPY review.mjs /usr/local/bin/review.mjs
 COPY review-pr.sh /usr/local/bin/review-pr.sh
@@ -42,6 +44,6 @@ COPY qa.mjs /usr/local/bin/qa.mjs
 # system prompts so the cloud agent reviews to the same standard as a local
 # Claude Code session. Read at runtime from MACRODEPLOY_SKILLS_DIR.
 COPY skills/ /usr/local/share/macrodeploy/skills/
-RUN chmod +x /usr/local/bin/verify.sh /usr/local/bin/entrypoint.sh /usr/local/bin/implement.sh /usr/local/bin/fix.sh /usr/local/bin/review-pr.sh /usr/local/bin/resolve.sh /usr/local/bin/deploy-setup.sh
+RUN chmod +x /usr/local/bin/verify.sh /usr/local/bin/entrypoint.sh /usr/local/bin/implement.sh /usr/local/bin/fix.sh /usr/local/bin/review-pr.sh /usr/local/bin/resolve.sh /usr/local/bin/steer.sh /usr/local/bin/repo-context.sh /usr/local/bin/deploy-setup.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

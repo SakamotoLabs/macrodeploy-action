@@ -1,0 +1,27 @@
+# Interactive steering: comment `/macrodeploy <instruction>` on a PR and the agent
+# applies the change to that PR's branch (or runs visual QA on `/macrodeploy qa`).
+# Copy to .github/workflows/macrodeploy-comment.yml. Needs the ANTHROPIC_API_KEY secret.
+name: MacroDeploy Steer
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  steer:
+    # Only on PR comments that start with the trigger.
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/macrodeploy') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: sakamotolabs/macrodeploy-action@v1
+        with:
+          mode: steer
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          pr_number: ${{ github.event.issue.number }}
+          comment_body: ${{ github.event.comment.body }}

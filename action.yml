@@ -27,7 +27,7 @@ inputs:
     required: false
     default: ${{ github.token }}
   mode:
-    description: "verify (PR gate + review), implement (issue→PR), fix, review (re-review a PR), resolve (resolve merge conflicts), security, coverage, deployaudit (deployment audit), deploysetup (scaffold deploy-on-merge), recommend, plan, or qa (headless Chrome QA)."
+    description: "verify (PR gate + review), implement (issue→PR), fix, review (re-review a PR), resolve (resolve merge conflicts), steer (apply a /macrodeploy PR comment), security, coverage, deployaudit (deployment audit), deploysetup (scaffold deploy-on-merge), recommend, plan, or qa (headless Chrome QA)."
     required: false
     default: "verify"
   issue_number:
@@ -43,7 +43,11 @@ inputs:
     required: false
     default: ""
   pr_number:
-    description: "PR number (fix mode)."
+    description: "PR number (fix / steer mode)."
+    required: false
+    default: ""
+  comment_body:
+    description: "Steer mode: the `/macrodeploy ...` PR comment body to act on."
     required: false
     default: ""
   start_command:
@@ -83,6 +87,7 @@ runs:
     INPUT_ISSUE_TITLE: ${{ inputs.issue_title }}
     INPUT_ISSUE_BODY: ${{ inputs.issue_body }}
     INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+    INPUT_COMMENT_BODY: ${{ inputs.comment_body }}
     INPUT_START_COMMAND: ${{ inputs.start_command }}
     INPUT_APP_PORT: ${{ inputs.app_port }}
     INPUT_QA_INSTRUCTIONS: ${{ inputs.qa_instructions }}

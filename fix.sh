@@ -69,7 +69,10 @@ fi
 
 echo "::group::Agent (Claude Code, test-first)"
 export ANTHROPIC_API_KEY="$KEY"
+CONTEXT=$(repo-context.sh "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" 2>/dev/null || true)
 PROMPT="Address these code review findings in this repository, working test-first.
+
+${CONTEXT}
 
 For each finding where a test is feasible:
   1. First add or extend a FOCUSED test that fails BECAUSE of the finding, and run

@@ -52,9 +52,15 @@ echo "::endgroup::"
 
 echo "::group::Agent (Claude Code, test-first)"
 export ANTHROPIC_API_KEY="$KEY"
+# Codebase awareness + in-flight-changes view: layout, stack, existing migrations,
+# and the files other open PRs touch — so parallel runs follow conventions and
+# don't collide (e.g. duplicate migration ids authored off the same base).
+CONTEXT=$(repo-context.sh "macrodeploy/issue-${NUM}" 2>/dev/null || true)
 PROMPT="You are implementing GitHub issue #${NUM}: \"${TITLE}\".
 
 ${BODY}
+
+${CONTEXT}
 
 Make minimal, correct edits to satisfy the issue, working test-first:
   1. Add a FOCUSED test that captures the new behavior and fails before your change
