@@ -70,6 +70,10 @@ inputs:
     description: "Checklist mode: the items to audit (one per line). Overrides .macrodeploy/checklist.md; the dashboard passes the user's selection here."
     required: false
     default: ""
+  skill:
+    description: "Audit rubric / system prompt, passed by the MacroDeploy dashboard (kept out of this public repo)."
+    required: false
+    default: ""
   auto_merge:
     description: "Autonomy: 'true' to auto-merge PRs that are green, tested, low-risk, and finding-free."
     required: false
@@ -97,5 +101,6 @@ runs:
     INPUT_QA_INSTRUCTIONS: ${{ inputs.qa_instructions }}
     INPUT_PLAN_FEATURE: ${{ inputs.feature }}
     INPUT_CHECKLIST: ${{ inputs.checklist }}
+    INPUT_SKILL: ${{ inputs.skill }}
     INPUT_AUTO_MERGE: ${{ inputs.auto_merge }}
     GITHUB_TOKEN: ${{ inputs.github_token }}

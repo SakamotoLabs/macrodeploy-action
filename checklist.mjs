@@ -91,12 +91,16 @@ try {
   /* optional */
 }
 
-const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
-let SYSTEM = "";
-try {
-  SYSTEM = readFileSync(`${SKILLS_DIR}/checklist.md`, "utf8");
-} catch {
-  /* skill optional */
+// The audit rubric is passed at runtime by the MacroDeploy dashboard (kept out of
+// this public repo). Fall back to a bundled skill only if one exists.
+let SYSTEM = (process.env.INPUT_SKILL || "").trim();
+if (!SYSTEM) {
+  const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
+  try {
+    SYSTEM = readFileSync(`${SKILLS_DIR}/checklist.md`, "utf8");
+  } catch {
+    /* no skill — runs generic */
+  }
 }
 
 const PROMPT = `You are auditing this repository against a user-defined checklist. For EACH item, determine whether it is actually implemented in the codebase — and back every verdict with evidence.
