@@ -56,9 +56,9 @@ Respond with ONLY JSON (no prose, no code fences):
 Use "failure" for things that would block or break a deploy (no build script, secrets committed, broken Dockerfile), "warning" for missing CI/CD or undocumented env/secrets, "notice" for nice-to-haves. Empty findings array if deployment is already solid. Honor the repo's CLAUDE.md / AGENTS.md.`;
 
 const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
-let SYSTEM = "";
+let SYSTEM = (process.env.INPUT_SKILL || "").trim();
 try {
-  SYSTEM = readFileSync(`${SKILLS_DIR}/deploy-audit.md`, "utf8");
+  if (!SYSTEM) SYSTEM = readFileSync(`${SKILLS_DIR}/deploy-audit.md`, "utf8");
 } catch {
   /* no skill pack → default system prompt */
 }

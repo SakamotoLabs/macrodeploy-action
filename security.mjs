@@ -61,9 +61,11 @@ Use "failure" only for exploitable issues. Empty findings array if the code look
 // calibration, red flags, confidence bar) as the system prompt, so the cloud
 // audit holds the same standard a local Claude Code session would.
 const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
-let SYSTEM = "";
+// Rubric is passed at runtime by the dashboard (INPUT_SKILL); bundled file is a
+// legacy fallback (removed from this repo — present only if an old image is used).
+let SYSTEM = (process.env.INPUT_SKILL || "").trim();
 try {
-  SYSTEM = readFileSync(`${SKILLS_DIR}/security-review.md`, "utf8");
+  if (!SYSTEM) SYSTEM = readFileSync(`${SKILLS_DIR}/security-review.md`, "utf8");
 } catch {
   /* no skill pack → default system prompt */
 }

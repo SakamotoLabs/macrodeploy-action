@@ -70,9 +70,9 @@ Use "failure" only for critical untested logic (auth, payments, data mutations, 
 // Inject the ea-core `coverage` rubric (where coverage matters, what counts as
 // a real gap, weak-test smells, severity calibration) as the system prompt.
 const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
-let SYSTEM = "";
+let SYSTEM = (process.env.INPUT_SKILL || "").trim();
 try {
-  SYSTEM = readFileSync(`${SKILLS_DIR}/coverage.md`, "utf8");
+  if (!SYSTEM) SYSTEM = readFileSync(`${SKILLS_DIR}/coverage.md`, "utf8");
 } catch {
   /* no skill pack → default system prompt */
 }

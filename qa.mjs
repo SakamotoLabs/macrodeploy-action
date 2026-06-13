@@ -178,9 +178,9 @@ if (up && KEY) {
   // QA rubric (how to test, what's a real problem, severity, confidence bar) as
   // the system prompt; the repo's CLAUDE.md/AGENTS.md is auto-loaded for context.
   const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
-  let SYSTEM = "";
+  let SYSTEM = (process.env.INPUT_SKILL || "").trim();
   try {
-    SYSTEM = readFileSync(`${SKILLS_DIR}/qa.md`, "utf8");
+    if (!SYSTEM) SYSTEM = readFileSync(`${SKILLS_DIR}/qa.md`, "utf8");
   } catch {}
   // Per-repo memory of accepted non-issues, so QA doesn't re-raise them.
   let MEMORY = "";
