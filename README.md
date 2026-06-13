@@ -31,6 +31,16 @@ jobs:
 
 Omit `anthropic_api_key` to run just the verify gate (no review).
 
+## Audit a repo against a checklist (`mode: checklist`)
+
+Define the features/tools you expect — in plain language — in
+`.macrodeploy/checklist.md` (see [`examples/checklist.example.md`](examples/checklist.example.md)),
+then add [`examples/macrodeploy-checklist.yml`](examples/macrodeploy-checklist.yml).
+On each run the agent checks every item against the code (with `file:line`
+evidence) and posts a **MacroDeploy Audit** check — `pass / partial / fail /
+unknown` per item, plus a score. Add `gate: true` to the checklist to fail the
+check when a high-severity item is missing.
+
 ## Inputs
 
 | input | default | description |

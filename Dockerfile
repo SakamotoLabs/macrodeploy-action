@@ -37,6 +37,7 @@ COPY coverage.mjs /usr/local/bin/coverage.mjs
 COPY deploy-audit.mjs /usr/local/bin/deploy-audit.mjs
 COPY deploy-setup.sh /usr/local/bin/deploy-setup.sh
 COPY recommend.mjs /usr/local/bin/recommend.mjs
+COPY checklist.mjs /usr/local/bin/checklist.mjs
 COPY automerge.sh /usr/local/bin/automerge.sh
 COPY plan.mjs /usr/local/bin/plan.mjs
 COPY qa.mjs /usr/local/bin/qa.mjs

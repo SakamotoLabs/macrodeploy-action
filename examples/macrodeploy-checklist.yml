@@ -1,0 +1,29 @@
+# User-defined audit: checks the repo against .macrodeploy/checklist.md and posts
+# a "MacroDeploy Audit" check. Copy to .github/workflows/macrodeploy-checklist.yml.
+# Define your checks in .macrodeploy/checklist.md (see examples/checklist.example.md).
+# Needs the ANTHROPIC_API_KEY secret.
+name: MacroDeploy Audit
+on:
+  workflow_dispatch:
+    inputs:
+      checklist:
+        description: "Items to audit (one per line). Blank = use .macrodeploy/checklist.md."
+        required: false
+        default: ""
+  # AutoPilot — uncomment for a scheduled weekly audit (uses .macrodeploy/checklist.md):
+  # schedule:
+  #   - cron: "0 9 * * 1"
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sakamotolabs/macrodeploy-action@v1
+        with:
+          mode: checklist
+          checklist: ${{ inputs.checklist }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-opus-4-8

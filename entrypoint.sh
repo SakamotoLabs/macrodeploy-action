@@ -52,6 +52,10 @@ if [ "${INPUT_MODE:-verify}" = "qa" ]; then
   git config --global --add safe.directory "$PWD" 2>/dev/null || true
   exec node /usr/local/bin/qa.mjs
 fi
+if [ "${INPUT_MODE:-verify}" = "checklist" ]; then
+  git config --global --add safe.directory "$PWD" 2>/dev/null || true
+  exec node /usr/local/bin/checklist.mjs
+fi
 
 FAST="${INPUT_FAST:-false}"
 REVIEW="${INPUT_REVIEW:-true}"
