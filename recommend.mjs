@@ -36,7 +36,7 @@ async function postCheck(conclusion, summary, text) {
   }).catch(() => {});
 }
 
-if (!KEY) {
+if (!KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
   await postCheck(
     "neutral",
     "⚠️ No `ANTHROPIC_API_KEY` is set on this repository, so recommendations couldn't run.\n\n" +
@@ -60,7 +60,7 @@ Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<4-6 sentences on the product's maturity and the most valuable things to build/finish next>","recommendations":[{"title":"<short imperative title>","detail":"<what + why + rough approach>","category":"gap|opportunity|todo","priority":"high|medium|low","path":"<repo-relative file, or empty string>"}]}
 Order by priority (high first). Aim for 6-15 high-quality, deduped items.`;
 
-process.env.ANTHROPIC_API_KEY = KEY;
+if (KEY) process.env.ANTHROPIC_API_KEY = KEY;
 const res = spawnSync(
   "claude",
   ["-p", PROMPT, "--model", MODEL, "--permission-mode", "acceptEdits",

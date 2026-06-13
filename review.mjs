@@ -27,7 +27,7 @@ function bail(msg) {
   process.exit(0);
 }
 
-if (!KEY) bail("no API key — skipping review");
+if (!KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) bail("no API key — skipping review");
 if (!BASE) bail("no base ref — skipping review");
 if (!TOKEN || !REPO) bail("missing GITHUB_TOKEN/REPOSITORY — skipping review");
 

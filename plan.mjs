@@ -36,7 +36,7 @@ async function postCheck(conclusion, summary, text) {
   }).catch(() => {});
 }
 
-if (!KEY) {
+if (!KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
   await postCheck(
     "neutral",
     "⚠️ No `ANTHROPIC_API_KEY` is set on this repository, so the feature plan couldn't run.\n\n" +
@@ -62,7 +62,7 @@ Ground every task in what's actually in the repo: before proposing to build some
 Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<2-4 sentences: your overall approach and sequencing>","tasks":[{"title":"<short imperative title>","detail":"<what to build + which files/areas + approach + acceptance>","priority":"high|medium|low"}]}`;
 
-process.env.ANTHROPIC_API_KEY = KEY;
+if (KEY) process.env.ANTHROPIC_API_KEY = KEY;
 const res = spawnSync(
   "claude",
   ["-p", PROMPT, "--model", MODEL, "--permission-mode", "acceptEdits",

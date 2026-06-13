@@ -73,7 +73,7 @@ if (INLINE) {
 // Gate flag: `gate: true` anywhere in the file turns a high-severity miss into a failure.
 const GATE = /^\s*gate:\s*true\s*$/im.test(CHECKLIST);
 
-if (!KEY) {
+if (!KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
   await postCheck(
     "neutral",
     "⚠️ No `ANTHROPIC_API_KEY` is set on this repository, so the audit couldn't run.\n\n" +
@@ -121,7 +121,7 @@ Rules:
 Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<3-5 sentences: overall posture + the most important gaps>","items":[{"id":"","title":"","status":"pass|partial|fail|unknown","severity":"high|medium|low","confidence":"high|medium|low","note":"","remediation":"","evidence":[{"path":"","line":0,"quote":""}]}]}`;
 
-process.env.ANTHROPIC_API_KEY = KEY;
+if (KEY) process.env.ANTHROPIC_API_KEY = KEY;
 const res = spawnSync(
   "claude",
   [

@@ -10,6 +10,10 @@ inputs:
     description: "Anthropic API key. If omitted, the AI review is skipped (the verify gate still runs)."
     required: false
     default: ""
+  claude_code_oauth_token:
+    description: "Claude Code OAuth (Pro/Max subscription) token. Used when no API key is set, so AI runs draw on the user's plan instead of API billing."
+    required: false
+    default: ""
   fast:
     description: "Skip the build step (typecheck + lint + tests only)."
     required: false
@@ -87,6 +91,7 @@ runs:
   image: "docker://ghcr.io/sakamotolabs/macrodeploy-action:v1"
   env:
     INPUT_ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+    INPUT_CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude_code_oauth_token }}
     INPUT_FAST: ${{ inputs.fast }}
     INPUT_REVIEW: ${{ inputs.review }}
     INPUT_MODEL: ${{ inputs.model }}

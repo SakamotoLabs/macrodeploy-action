@@ -35,7 +35,7 @@ async function postCheck(conclusion, summary) {
 }
 
 // No key → post a clear "needs key" result instead of a silent green no-op.
-if (!KEY) {
+if (!KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
   await postCheck(
     "neutral",
     "⚠️ No `ANTHROPIC_API_KEY` is set on this repository, so the security audit couldn't run.\n\n" +
@@ -70,7 +70,7 @@ try {
   /* no skill pack → default system prompt */
 }
 
-process.env.ANTHROPIC_API_KEY = KEY;
+if (KEY) process.env.ANTHROPIC_API_KEY = KEY;
 process.env.MAX_THINKING_TOKENS = process.env.MAX_THINKING_TOKENS || "8000"; // extended thinking
 const res = spawnSync(
   "claude",

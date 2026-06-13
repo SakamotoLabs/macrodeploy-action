@@ -9,6 +9,15 @@ set -uo pipefail
 
 cd "${GITHUB_WORKSPACE:-/github/workspace}" || { echo "no workspace"; exit 1; }
 
+# Auth: prefer the API key; otherwise use a Pro/Max subscription OAuth token, if
+# provided, so AI runs draw on the user's plan. Export it process-wide so the
+# Claude CLI + all runners pick it up. NOTE: a set ANTHROPIC_API_KEY silently
+# overrides the OAuth token in the CLI, so only use the token when no key is set.
+if [ -z "${INPUT_ANTHROPIC_API_KEY:-}" ] && [ -n "${INPUT_CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  export CLAUDE_CODE_OAUTH_TOKEN="${INPUT_CLAUDE_CODE_OAUTH_TOKEN}"
+  unset ANTHROPIC_API_KEY 2>/dev/null || true
+fi
+
 # Agent modes hand off to their script and exit.
 if [ "${INPUT_MODE:-verify}" = "implement" ]; then
   exec /usr/local/bin/implement.sh

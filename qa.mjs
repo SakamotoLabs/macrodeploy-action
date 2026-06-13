@@ -206,7 +206,7 @@ Respond with ONLY JSON (no prose, no code fences):
 {"summary":"<3-5 sentences assessing the app's quality and what you exercised>","issues":[{"severity":"info|warn|fail","area":"<page or flow>","detail":"<what is wrong + how to reproduce>"}]}
 Empty issues array if everything works.`;
 
-  process.env.ANTHROPIC_API_KEY = KEY;
+  if (KEY) process.env.ANTHROPIC_API_KEY = KEY;
   process.env.MAX_THINKING_TOKENS = process.env.MAX_THINKING_TOKENS || "8000"; // extended thinking
   const res = spawnSync(
     "claude",
