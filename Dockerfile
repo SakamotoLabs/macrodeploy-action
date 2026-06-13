@@ -41,10 +41,9 @@ COPY checklist.mjs /usr/local/bin/checklist.mjs
 COPY automerge.sh /usr/local/bin/automerge.sh
 COPY plan.mjs /usr/local/bin/plan.mjs
 COPY qa.mjs /usr/local/bin/qa.mjs
-# Skill pack: review/audit rubrics distilled from the ea-core skills, injected as
-# system prompts so the cloud agent reviews to the same standard as a local
-# Claude Code session. Read at runtime from MACRODEPLOY_SKILLS_DIR.
-COPY skills/ /usr/local/share/macrodeploy/skills/
+# Audit/review rubrics are NOT bundled here — they're proprietary and provided at
+# runtime by the MacroDeploy dashboard via the `skill` input. Runs without a
+# passed skill fall back to a generic review.
 RUN chmod +x /usr/local/bin/verify.sh /usr/local/bin/entrypoint.sh /usr/local/bin/implement.sh /usr/local/bin/fix.sh /usr/local/bin/review-pr.sh /usr/local/bin/resolve.sh /usr/local/bin/steer.sh /usr/local/bin/repo-context.sh /usr/local/bin/deploy-setup.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
