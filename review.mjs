@@ -9,7 +9,7 @@
 // This is the main defense against false positives. It also auto-loads the
 // repo's CLAUDE.md/AGENTS.md as project memory, and honors a per-repo memory of
 // previously-accepted non-issues so re-reviews stop re-flagging the same things.
-import { execSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 const KEY = process.env.INPUT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || "";
@@ -42,7 +42,10 @@ if (!process.env.REVIEW_HEAD_SHA) {
 
 let diff = "";
 try {
-  diff = execSync(`git diff --no-color origin/${BASE}...HEAD`, { encoding: "utf8", maxBuffer: 20e6 });
+  // Args array (no shell) so a branch/ref name can never be interpreted by a shell.
+  const d = spawnSync("git", ["diff", "--no-color", `origin/${BASE}...HEAD`], { encoding: "utf8", maxBuffer: 20e6 });
+  if (d.status !== 0) throw new Error(d.stderr || "git diff failed");
+  diff = d.stdout || "";
 } catch {
   bail("could not compute diff");
 }
