@@ -13,7 +13,11 @@ KEY="${INPUT_ANTHROPIC_API_KEY:-}"
 MODEL="${INPUT_MODEL:-claude-sonnet-4-6}"
 PR="${INPUT_PR_NUMBER:-}"
 
-[ -z "$KEY" ] && { echo "resolve: no ANTHROPIC_API_KEY"; exit 1; }
+# Accept a Claude Pro/Max OAuth token (exported by entrypoint.sh) as well as an
+# API key — Claude Code picks up either from the environment.
+if [ -z "$KEY" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  echo "resolve: no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1
+fi
 [ -z "$PR" ] && { echo "resolve: no PR number"; exit 1; }
 
 git config --global --add safe.directory "$PWD" 2>/dev/null || true
@@ -114,7 +118,8 @@ echo "resolve: conflicted files:"
 echo "$CONFLICTS" | sed 's/^/  - /'
 
 echo "::group::Agent (Claude Code) — resolving conflicts"
-export ANTHROPIC_API_KEY="$KEY"
+# Only export a non-empty key — empty would shadow the OAuth token in the CLI.
+[ -n "$KEY" ] && export ANTHROPIC_API_KEY="$KEY"
 export MAX_THINKING_TOKENS="${MAX_THINKING_TOKENS:-8000}"
 PROMPT="A merge of branch '${BASE_REF}' into '${HEAD_REF}' produced conflicts. Resolve every conflict so the code is correct and BOTH sides' intent is preserved — do not blindly discard either side. Remove ALL conflict markers (<<<<<<<, =======, >>>>>>>).
 

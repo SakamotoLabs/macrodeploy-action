@@ -11,7 +11,11 @@ MODEL="${INPUT_MODEL:-claude-sonnet-4-6}"
 PR="${INPUT_PR_NUMBER:-}"
 COMMENT="${INPUT_COMMENT_BODY:-}"
 
-[ -z "$KEY" ] && { echo "steer: no ANTHROPIC_API_KEY"; exit 1; }
+# Accept a Claude Pro/Max OAuth token (exported by entrypoint.sh) as well as an
+# API key — Claude Code picks up either from the environment.
+if [ -z "$KEY" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  echo "steer: no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1
+fi
 [ -z "$PR" ]  && { echo "steer: no pr_number"; exit 1; }
 
 # Strip the `/macrodeploy` trigger prefix → the actual instruction.
@@ -70,7 +74,8 @@ SYS_ARGS=()
 CONTEXT=$(repo-context.sh "$HEAD_REF" 2>/dev/null || true)
 DIFF=$(git diff "origin/${BASE_REF}...HEAD" 2>/dev/null | head -c 50000)
 
-export ANTHROPIC_API_KEY="$KEY"
+# Only export a non-empty key — empty would shadow the OAuth token in the CLI.
+[ -n "$KEY" ] && export ANTHROPIC_API_KEY="$KEY"
 PROMPT="A reviewer asked for a change on this pull request (PR #${PR}). Apply it.
 
 Reviewer request:

@@ -10,7 +10,11 @@ KEY="${INPUT_ANTHROPIC_API_KEY:-}"
 MODEL="${INPUT_MODEL:-claude-sonnet-4-6}"
 PR="${INPUT_PR_NUMBER:-}"
 
-[ -z "$KEY" ] && { echo "fix: no ANTHROPIC_API_KEY"; exit 1; }
+# Accept a Claude Pro/Max OAuth token (exported by entrypoint.sh) as well as an
+# API key — Claude Code picks up either from the environment.
+if [ -z "$KEY" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  echo "fix: no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1
+fi
 [ -z "$PR" ] && { echo "fix: no PR number"; exit 1; }
 
 git config --global --add safe.directory "$PWD" 2>/dev/null || true
@@ -68,7 +72,8 @@ No significant findings (warning/failure) to address — only minor notes remain
 fi
 
 echo "::group::Agent (Claude Code, test-first)"
-export ANTHROPIC_API_KEY="$KEY"
+# Only export a non-empty key — empty would shadow the OAuth token in the CLI.
+[ -n "$KEY" ] && export ANTHROPIC_API_KEY="$KEY"
 CONTEXT=$(repo-context.sh "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" 2>/dev/null || true)
 PROMPT="Address these code review findings in this repository, working test-first.
 

@@ -11,7 +11,11 @@ KEY="${INPUT_ANTHROPIC_API_KEY:-}"
 MODEL="${INPUT_MODEL:-claude-sonnet-4-6}"
 PR="${INPUT_PR_NUMBER:-}"
 
-[ -z "$KEY" ] && { echo "review: no ANTHROPIC_API_KEY"; exit 0; }
+# Accept a Claude Pro/Max OAuth token (exported by entrypoint.sh) as well as an
+# API key; review.mjs picks up either. Skip only when neither is set.
+if [ -z "$KEY" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  echo "review: no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 0
+fi
 [ -z "$PR" ] && { echo "review: no PR number"; exit 1; }
 
 git config --global --add safe.directory "$PWD" 2>/dev/null || true

@@ -95,7 +95,9 @@ function runReview() {
     {
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
-      env: { ...process.env, ANTHROPIC_API_KEY: KEY, MAX_THINKING_TOKENS: thinking },
+      // Only set ANTHROPIC_API_KEY when present — an empty value would shadow a
+      // Pro/Max CLAUDE_CODE_OAUTH_TOKEN in the CLI (it's inherited via process.env).
+      env: { ...process.env, ...(KEY ? { ANTHROPIC_API_KEY: KEY } : {}), MAX_THINKING_TOKENS: thinking },
     },
   );
   console.log(`review: model=${useModel} thinking=${thinking} files=${fileCount}`);

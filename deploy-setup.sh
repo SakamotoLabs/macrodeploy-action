@@ -10,7 +10,11 @@ cd "${GITHUB_WORKSPACE:-/github/workspace}" || { echo "no workspace"; exit 1; }
 
 KEY="${INPUT_ANTHROPIC_API_KEY:-}"
 MODEL="${INPUT_MODEL:-claude-sonnet-4-6}"
-[ -z "$KEY" ] && { echo "deploy-setup: no ANTHROPIC_API_KEY"; exit 1; }
+# Accept a Claude Pro/Max OAuth token (exported by entrypoint.sh) as well as an
+# API key — Claude Code picks up either from the environment.
+if [ -z "$KEY" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  echo "deploy-setup: no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1
+fi
 
 git config --global --add safe.directory "$PWD" 2>/dev/null || true
 api() { curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "$@"; }
@@ -24,7 +28,8 @@ SYS_ARGS=()
   && SYS_ARGS=(--append-system-prompt "$(cat /usr/local/share/macrodeploy/skills/deploy-audit.md)")
 
 echo "::group::Agent (Claude Code) — generating deploy workflow"
-export ANTHROPIC_API_KEY="$KEY"
+# Only export a non-empty key — empty would shadow the OAuth token in the CLI.
+[ -n "$KEY" ] && export ANTHROPIC_API_KEY="$KEY"
 export MAX_THINKING_TOKENS="${MAX_THINKING_TOKENS:-8000}"
 PROMPT="Create exactly ONE file: .github/workflows/macrodeploy-deploy.yml — a GitHub Actions workflow that deploys THIS app to its platform when commits land on the default branch ('${DEFAULT}'), i.e. after a PR merges.
 

@@ -104,7 +104,7 @@ VERIFY_RC=$?
 echo "::endgroup::"
 
 # ── 3. AI review → Check Run with inline annotations (best-effort) ───────────
-if [ "$REVIEW" = "true" ] && [ -n "$KEY" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
+if [ "$REVIEW" = "true" ] && { [ -n "$KEY" ] || [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; } && [ -n "${GITHUB_BASE_REF:-}" ]; then
   echo "::group::AI review"
   git config --global --add safe.directory "$PWD" 2>/dev/null || true
   git fetch --no-tags --depth=50 origin "$GITHUB_BASE_REF" 2>/dev/null || true

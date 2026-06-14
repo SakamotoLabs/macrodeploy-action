@@ -13,7 +13,11 @@ TITLE="${INPUT_ISSUE_TITLE:-}"
 BODY="${INPUT_ISSUE_BODY:-}"
 NUM="${INPUT_ISSUE_NUMBER:-}"
 
-[ -z "$KEY" ] && { echo "implement: no ANTHROPIC_API_KEY"; exit 1; }
+# Accept a Claude Pro/Max OAuth token (exported by entrypoint.sh) as well as an
+# API key — Claude Code picks up either from the environment.
+if [ -z "$KEY" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  echo "implement: no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1
+fi
 [ -z "$NUM" ] && { echo "implement: no issue number"; exit 1; }
 
 git config --global --add safe.directory "$PWD" 2>/dev/null || true
@@ -51,7 +55,9 @@ done < <(find . -maxdepth 2 -name requirements.txt -not -path '*/node_modules/*'
 echo "::endgroup::"
 
 echo "::group::Agent (Claude Code, test-first)"
-export ANTHROPIC_API_KEY="$KEY"
+# Only export a non-empty key — a set (even empty) ANTHROPIC_API_KEY shadows the
+# OAuth token in the CLI. With OAuth, CLAUDE_CODE_OAUTH_TOKEN is already exported.
+[ -n "$KEY" ] && export ANTHROPIC_API_KEY="$KEY"
 # Codebase awareness + in-flight-changes view: layout, stack, existing migrations,
 # and the files other open PRs touch — so parallel runs follow conventions and
 # don't collide (e.g. duplicate migration ids authored off the same base).
