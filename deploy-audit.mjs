@@ -53,7 +53,9 @@ Respond with ONLY JSON (no prose, no code fences):
  "method":"<one line: e.g. 'manual ./deploy.sh to Cloud Run', 'auto on push via Vercel', 'none found'>",
  "findings":[{"path":"<repo-relative file or '-'>","line":<int or 1>,"level":"notice|warning|failure","comment":"<a concrete gap or risk in the deployment setup + how to fix it>"}]}
 
-Use "failure" for things that would block or break a deploy (no build script, secrets committed, broken Dockerfile), "warning" for missing CI/CD or undocumented env/secrets, "notice" for nice-to-haves. Empty findings array if deployment is already solid. Honor the repo's CLAUDE.md / AGENTS.md.`;
+Use "failure" for things that would block or break a deploy (no build script, secrets committed, broken Dockerfile), "warning" for missing CI/CD or undocumented env/secrets, "notice" for nice-to-haves. Empty findings array if deployment is already solid. Honor the repo's CLAUDE.md / AGENTS.md.
+
+IMPORTANT — manual/local deploys: if this app ships to a cloud platform (Cloud Run/GCP, AWS, Fly, Render, Railway, Heroku, etc.) via a MANUAL or LOCAL step — a deploy.sh or gcloud/aws/flyctl command run by hand, or a cloudbuild config triggered manually — and there is NO GitHub Actions workflow that deploys on merge, treat that as a significant gap (the deployed code can drift from GitHub and isn't reproducible). In that case: make "method" say it's not from GitHub (e.g. "manual ./deploy.sh to Cloud Run — not deployed from GitHub"), and ADD a "warning" finding with comment starting "Deploys to <platform> manually — not reproducible from GitHub." recommending deploy-on-merge and noting MacroDeploy's "Set up auto-deploy" can scaffold it. Do NOT raise this if a GitHub Actions deploy workflow already exists, or the platform auto-deploys via a native git integration (Vercel/Netlify connected to GitHub).`;
 
 const SKILLS_DIR = process.env.MACRODEPLOY_SKILLS_DIR || "/usr/local/share/macrodeploy/skills";
 let SYSTEM = (process.env.INPUT_SKILL || "").trim();

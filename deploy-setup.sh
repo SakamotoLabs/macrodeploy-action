@@ -40,11 +40,14 @@ Requirements:
   on the job. (Until the user flips it on, the workflow is a no-op.)
 - Use the repo's EXISTING deploy mechanism — read deploy.sh, infra/cloudbuild.yaml, vercel.json, fly.toml, render.yaml, Procfile, package.json, etc., and invoke that. Don't invent a new deploy path if one exists.
 - All credentials come from GitHub Actions secrets (\${{ secrets.NAME }}) — NEVER hardcode. Use the platform's standard auth where applicable (e.g. google-github-actions/auth for GCP/Cloud Run, superfly/flyctl-actions for Fly, the Vercel CLI/action for Vercel).
+- GCP / Cloud Run specifically: PREFER keyless Workload Identity Federation — use google-github-actions/auth with 'workload_identity_provider' + 'service_account' (NOT a JSON key), and add to the job: permissions: { id-token: write, contents: read }. Reference \${{ secrets.GCP_WIF_PROVIDER }} and \${{ secrets.GCP_SERVICE_ACCOUNT }} (plus \${{ vars.GCP_PROJECT_ID }} / \${{ vars.GCP_REGION }} as needed). Only fall back to a JSON key secret (e.g. GCP_SA_KEY via 'credentials_json') if WIF truly can't be used, and note in the summary that a long-lived key is less secure.
 - If this app ALREADY auto-deploys via a platform's native git integration (e.g. Vercel/Netlify connected to GitHub), DO NOT create a workflow — instead explain that in your summary and create no file.
 
 Do NOT modify any other files. Do NOT use git and do NOT open a pull request — only create that one workflow file.
 
-End your reply with a short summary of what the workflow does, then a checklist titled 'Secrets to add' listing the EXACT secret names the user must add (GitHub → Settings → Secrets and variables → Actions), one line each on how to obtain it."
+End your reply with a short summary of what the workflow does, then a checklist titled 'Secrets to add' listing the EXACT secret names the user must add (GitHub → Settings → Secrets and variables → Actions), one line each on how to obtain it.
+
+If the target is GCP/Cloud Run with Workload Identity Federation, ALSO include a fenced bash block titled 'GCP one-time setup' with the EXACT gcloud commands to make it work, using placeholders the user fills in (PROJECT_ID, and repo '${GITHUB_REPOSITORY}'): create a workload identity pool + an OIDC provider for token.actions.githubusercontent.com restricted to this repo; create (or reuse) a deploy service account; grant it the roles this app's deploy needs (e.g. roles/run.admin, roles/cloudbuild.builds.editor, roles/artifactregistry.writer, roles/storage.admin, roles/iam.serviceAccountUser — include only what THIS deploy uses); and bind roles/iam.workloadIdentityUser so the GitHub repo can impersonate the service account. Then list the resulting values to store: GCP_WIF_PROVIDER (the full projects/.../providers/... resource name), GCP_SERVICE_ACCOUNT (the SA email), GCP_PROJECT_ID, GCP_REGION."
 
 SUMMARY=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
   --allowedTools "Edit,Write,Read,Grep,Glob,Bash" "${SYS_ARGS[@]}" 2>/dev/null) || echo "(agent run returned non-zero)"
