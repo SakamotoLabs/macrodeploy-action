@@ -108,6 +108,14 @@ echo "$SUMMARY"
 echo "fix: agent verdict = ${VERDICT:-unknown}"
 echo "::endgroup::"
 
+# GITHUB_TOKEN can't push .github/workflows changes — drop any the agent made so
+# they don't get the whole push rejected.
+if [ -n "$(git status --porcelain -- .github/workflows 2>/dev/null)" ]; then
+  echo "fix: dropping .github/workflows changes — GITHUB_TOKEN can't push them"
+  git checkout -- .github/workflows 2>/dev/null || true
+  git clean -fdq .github/workflows 2>/dev/null || true
+fi
+
 if [ -z "$(git status --porcelain)" ]; then
   echo "fix: agent made no changes"
 

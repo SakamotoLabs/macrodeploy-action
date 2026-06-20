@@ -93,6 +93,15 @@ echo "$SUMMARY"
 echo "implement: agent verdict = ${VERDICT:-unknown}"
 echo "::endgroup::"
 
+# GITHUB_TOKEN can't push .github/workflows changes (a GitHub restriction; no
+# permissions: key lifts it) and one rejected file fails the WHOLE push — so drop
+# any workflow files the agent created/edited before we commit.
+if [ -n "$(git status --porcelain -- .github/workflows 2>/dev/null)" ]; then
+  echo "implement: dropping .github/workflows changes — GITHUB_TOKEN can't push them"
+  git checkout -- .github/workflows 2>/dev/null || true
+  git clean -fdq .github/workflows 2>/dev/null || true
+fi
+
 # Use porcelain (not `git diff`) so newly-created untracked files count too.
 if [ -z "$(git status --porcelain)" ]; then
   echo "implement: agent made no file changes — nothing to PR"

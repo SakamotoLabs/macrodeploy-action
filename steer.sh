@@ -97,6 +97,13 @@ RAW=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
 SUMMARY=$(printf '%s\n' "$RAW" | tail -8)
 echo "::endgroup::"
 
+# GITHUB_TOKEN can't push .github/workflows changes — drop any the agent made.
+if [ -n "$(git status --porcelain -- .github/workflows 2>/dev/null)" ]; then
+  echo "steer: dropping .github/workflows changes — GITHUB_TOKEN can't push them"
+  git checkout -- .github/workflows 2>/dev/null || true
+  git clean -fdq .github/workflows 2>/dev/null || true
+fi
+
 if [ -z "$(git status --porcelain)" ]; then
   ghpost "issues/${PR}/comments" \
     "$(jq -n --arg b "🤖 MacroDeploy — no file changes were needed for: \"${INSTR}\"." '{body:$b}')"
