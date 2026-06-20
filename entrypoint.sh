@@ -9,6 +9,19 @@ set -uo pipefail
 
 cd "${GITHUB_WORKSPACE:-/github/workspace}" || { echo "no workspace"; exit 1; }
 
+# Never let an agent's `git add -A` (implement/fix/resolve/steer) sweep in the
+# dependency caches our install step creates — pnpm's .pnpm-store in particular
+# holds files >100MB, which GitHub rejects on push (GH001 Large files), so the
+# branch never lands and no PR opens. .git/info/exclude is a local-only ignore
+# that affects untracked paths regardless of the repo's own .gitignore.
+if [ -d .git ]; then
+  mkdir -p .git/info
+  for _p in node_modules/ .pnpm-store/ .yarn/cache/ .venv/ venv/ \
+            __pycache__/ .pytest_cache/ .mypy_cache/ .turbo/; do
+    grep -qxF "$_p" .git/info/exclude 2>/dev/null || echo "$_p" >> .git/info/exclude
+  done
+fi
+
 # Auth: prefer the API key; otherwise use a Pro/Max subscription OAuth token, if
 # provided, so AI runs draw on the user's plan. Export it process-wide so the
 # Claude CLI + all runners pick it up. NOTE: a set ANTHROPIC_API_KEY silently
