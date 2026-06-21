@@ -34,6 +34,19 @@ run()  { # run <label> <cmd...>  (executes in the current directory)
 skip() { SKIP+=("$1"); printf '%s– skip %s (%s)%s\n' "$c_dim" "$1" "$2" "$c_rst"; }
 has()  { command -v "$1" >/dev/null 2>&1; }
 node_script() { node -e "const s=(require('./package.json').scripts)||{};process.exit(s['$1']?0:1)" 2>/dev/null; }
+# True if the CURRENT dir has any ESLint config (a config file, or the
+# package.json "eslintConfig" key). Checks explicit filenames with -e rather
+# than globbing: `ls a b c` exits non-zero if ANY arg is missing, which would
+# mask a config that's actually present.
+has_eslint_config() {
+  local f
+  for f in .eslintrc .eslintrc.js .eslintrc.cjs .eslintrc.json .eslintrc.yml \
+           .eslintrc.yaml eslint.config.js eslint.config.mjs eslint.config.cjs \
+           eslint.config.ts; do
+    [ -e "$f" ] && return 0
+  done
+  node -e "process.exit((require('./package.json').eslintConfig)?0:1)" 2>/dev/null
+}
 
 # ── Project-defined override wins (root only) ───────────────────────────────
 ROOT_PM=""
@@ -81,7 +94,17 @@ check_node() { # check_node <dir>
   elif [ -f tsconfig.json ]; then run "[$rel] typecheck (tsc)" "$PM" exec tsc --noEmit
   else skip "[$rel] typecheck" "no typecheck script / tsconfig"; fi
 
-  if node_script lint; then run "[$rel] lint" "$PM" run lint
+  if node_script lint; then
+    # `next lint` with no ESLint config drops into an interactive setup prompt
+    # ("How would you like to configure ESLint?") that hangs / exits non-zero in
+    # CI — which would pin a config-less repo's gate permanently red regardless
+    # of the diff. Treat that case as "no lint" rather than a hard failure.
+    local lint_cmd; lint_cmd=$(node -e "process.stdout.write(((require('./package.json').scripts)||{}).lint||'')" 2>/dev/null)
+    if printf '%s' "$lint_cmd" | grep -q 'next lint' && ! has_eslint_config; then
+      skip "[$rel] lint" "next lint without an ESLint config (would prompt interactively)"
+    else
+      run "[$rel] lint" "$PM" run lint
+    fi
   else skip "[$rel] lint" "no lint script"; fi
 
   if node_script test; then
