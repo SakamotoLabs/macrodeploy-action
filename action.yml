@@ -83,7 +83,11 @@ inputs:
     required: false
     default: "false"
   block_warnings:
-    description: "Strictness: 'true' to treat warning-level findings (not just failures) as blocking — for auto-merge eligibility and for what the fix flow addresses."
+    description: "Strictness: 'true' to treat warning-level findings (not just failures) as blocking — for auto-merge eligibility and for what the autonomous fix flow addresses."
+    required: false
+    default: "false"
+  fix_warnings:
+    description: "On-demand: 'true' to make this fix run address warning-level findings too, regardless of block_warnings. Set by the dashboard's manual 'Fix findings' so a user can fix warnings even when they don't block auto-merge."
     required: false
     default: "false"
 
@@ -113,4 +117,5 @@ runs:
     INPUT_SKILL: ${{ inputs.skill }}
     INPUT_AUTO_MERGE: ${{ inputs.auto_merge }}
     INPUT_BLOCK_WARNINGS: ${{ inputs.block_warnings }}
+    INPUT_FIX_WARNINGS: ${{ inputs.fix_warnings }}
     GITHUB_TOKEN: ${{ inputs.github_token }}

@@ -57,10 +57,15 @@ CID=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}
   | jq -r '.check_runs[] | select(.name=="MacroDeploy review") | .id' | head -1)
 FINDINGS=""
 if [ -n "$CID" ]; then
-  # Address failures always; warnings only when the repo opts into strict mode
-  # (block_warnings). Always skip `notice` nits so the fix→re-review loop converges.
+  # Address failures always. Include warnings when EITHER the repo treats warnings
+  # as blocking (block_warnings, the autonomous policy) OR this run was explicitly
+  # asked to (fix_warnings, set by the dashboard's manual "Fix findings" so a user
+  # can fix warnings on demand even when they don't gate auto-merge). Always skip
+  # `notice` nits so the fix→re-review loop converges.
   LEVELS='.annotation_level=="failure"'
-  [ "${INPUT_BLOCK_WARNINGS:-false}" = "true" ] && LEVELS='(.annotation_level=="failure" or .annotation_level=="warning")'
+  if [ "${INPUT_BLOCK_WARNINGS:-false}" = "true" ] || [ "${INPUT_FIX_WARNINGS:-false}" = "true" ]; then
+    LEVELS='(.annotation_level=="failure" or .annotation_level=="warning")'
+  fi
   FINDINGS=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs/${CID}/annotations" \
     | jq -r ".[] | select(${LEVELS}) | \"- \(.path):\(.start_line) [\(.annotation_level)] \(.message)\"")
 fi
