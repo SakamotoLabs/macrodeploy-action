@@ -82,7 +82,8 @@ Empty findings array if it looks good. Output STRICT valid JSON: double-quoted s
 DIFF:
 ${diff}`;
 
-function runReview() {
+// One model invocation → raw assistant text (unwraps the --output-format json envelope).
+function callClaude() {
   const useModel = big ? DEEP_MODEL : MODEL;
   // Claude Code reads MAX_THINKING_TOKENS to size extended thinking; give complex
   // reviews more room to reason.
@@ -109,18 +110,74 @@ function runReview() {
   } catch {
     /* not enveloped — treat as raw text */
   }
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end < 0) return { summary: "Review unavailable.", findings: [] };
-  const slice = text.slice(start, end + 1);
-  for (const candidate of [slice, slice.replace(/\\'/g, "'")]) {
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      /* try next */
+  return text;
+}
+
+function tryParse(s) {
+  try { return JSON.parse(s); } catch { /* fall through to a forgiving pass */ }
+  try { return JSON.parse(s.replace(/\\'/g, "'")); } catch { return null; }
+}
+
+// First brace-balanced {...} object (string/escape aware). Robust to prose around
+// the JSON or a stray "}" in trailing commentary that the naive first-{/last-}
+// slice would wrongly swallow.
+function firstBalancedObject(s) {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== "{") continue;
+    let depth = 0, inStr = false, esc = false;
+    for (let j = i; j < s.length; j++) {
+      const ch = s[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}" && --depth === 0) return s.slice(i, j + 1);
     }
   }
-  return { summary: "Review generated but could not be parsed as JSON.", findings: [] };
+  return null;
+}
+
+// Pull the review JSON out of the model text: prefer a fenced ```json block, then a
+// balanced object, then the naive first-{/last-} slice. Returns null if none parse.
+function extractJson(text) {
+  const sources = [];
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) sources.push(fence[1]);
+  sources.push(text);
+  for (const src of sources) {
+    const bal = firstBalancedObject(src);
+    if (bal) {
+      const p = tryParse(bal);
+      if (p && typeof p === "object") return p;
+    }
+  }
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    const p = tryParse(text.slice(start, end + 1));
+    if (p) return p;
+  }
+  return null;
+}
+
+// Run the review; retry once if the model's output won't parse (usually transient).
+// On a persistent failure, flag parseError so the check is neutral (never a silent
+// "clean" pass).
+function runReview() {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const parsed = extractJson(callClaude());
+    if (parsed) return parsed;
+    console.log(`review: could not parse model output (attempt ${attempt}/2)`);
+  }
+  return {
+    summary: "Review output couldn't be parsed as JSON after a retry — please re-run the review.",
+    findings: [],
+    parseError: true,
+  };
 }
 
 function gh(path, body) {
@@ -148,15 +205,19 @@ const annotations = findings
     message: f.comment || "Issue flagged by MacroDeploy.",
   }));
 
-const summary =
-  (review.summary || "No summary.") +
-  (annotations.length ? `\n\n**${annotations.length} inline finding(s).**` : "\n\nNo blocking issues found.");
+const summary = review.parseError
+  ? review.summary
+  : (review.summary || "No summary.") +
+    (annotations.length ? `\n\n**${annotations.length} inline finding(s).**` : "\n\nNo blocking issues found.");
 
 const res = await gh("check-runs", {
   name: "MacroDeploy review",
   head_sha: headSha,
   status: "completed",
-  conclusion: annotations.some((a) => a.annotation_level === "failure") ? "neutral" : "success",
+  // Parse failures and failure-level findings are both neutral (advisory), so a
+  // broken parse is never mistaken for a clean review.
+  conclusion:
+    review.parseError || annotations.some((a) => a.annotation_level === "failure") ? "neutral" : "success",
   output: { title: "MacroDeploy review", summary, annotations },
 });
 
