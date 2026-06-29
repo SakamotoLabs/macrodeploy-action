@@ -209,6 +209,10 @@ esac
 
 git config user.name "macrodeploy[bot]"
 git config user.email "macrodeploy@users.noreply.github.com"
+# Auto-fix trivial lint/format on the changed files before committing the fix.
+echo "::group::Autofix (changed files)"
+autofix.sh .
+echo "::endgroup::"
 git add -A
 git commit -q -m "Address MacroDeploy review findings (#${PR})"
 git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"

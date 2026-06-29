@@ -112,6 +112,11 @@ BRANCH="macrodeploy/issue-${NUM}"
 git config user.name "macrodeploy[bot]"
 git config user.email "macrodeploy@users.noreply.github.com"
 git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
+# Auto-fix trivial lint/format on the changed files before committing, so the gate
+# isn't tripped by import hygiene / formatting the agent didn't normalize.
+echo "::group::Autofix (changed files)"
+autofix.sh .
+echo "::endgroup::"
 git add -A
 git commit -q -m "Implement #${NUM}: ${TITLE}"
 git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${BRANCH}"

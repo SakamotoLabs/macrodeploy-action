@@ -178,6 +178,16 @@ check_python() { # check_python <dir>
   pyhas() { pyx "$1" --version >/dev/null 2>&1; }
   printf '%sdetected: Python in %s%s%s\n' "$c_dim" "$rel" "${PY:+ (poetry)}" "$c_rst"
 
+  # Deterministic lint: if the project declares ruff but it isn't importable in
+  # this run's environment, install it — otherwise the gate silently skips lint
+  # depending on whether some earlier step happened to install dev deps (which
+  # made the same PR's gate red on one run and "pass" on the next).
+  if [ -z "$PY" ] && ! pyhas ruff && grep -qi 'ruff' pyproject.toml requirements*.txt setup.cfg 2>/dev/null; then
+    printf '%sinstalling ruff (declared but not present)…%s\n' "$c_dim" "$c_rst"
+    pip3 install --quiet --break-system-packages ruff >/dev/null 2>&1 \
+      || pip3 install --quiet ruff >/dev/null 2>&1 || true
+  fi
+
   if   pyhas ruff;   then run "[$rel] ruff" pyx ruff check .
   elif pyhas flake8; then run "[$rel] flake8" pyx flake8
   else skip "[$rel] lint" "no ruff/flake8"; fi

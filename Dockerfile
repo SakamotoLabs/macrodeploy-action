@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends chromium \
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY verify.sh /usr/local/bin/verify.sh
+COPY autofix.sh /usr/local/bin/autofix.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY implement.sh /usr/local/bin/implement.sh
 COPY fix.sh /usr/local/bin/fix.sh
@@ -44,6 +45,6 @@ COPY qa.mjs /usr/local/bin/qa.mjs
 # Audit/review rubrics are NOT bundled here — they're proprietary and provided at
 # runtime by the MacroDeploy dashboard via the `skill` input. Runs without a
 # passed skill fall back to a generic review.
-RUN chmod +x /usr/local/bin/verify.sh /usr/local/bin/entrypoint.sh /usr/local/bin/implement.sh /usr/local/bin/fix.sh /usr/local/bin/review-pr.sh /usr/local/bin/resolve.sh /usr/local/bin/steer.sh /usr/local/bin/repo-context.sh /usr/local/bin/deploy-setup.sh
+RUN chmod +x /usr/local/bin/verify.sh /usr/local/bin/autofix.sh /usr/local/bin/entrypoint.sh /usr/local/bin/implement.sh /usr/local/bin/fix.sh /usr/local/bin/review-pr.sh /usr/local/bin/resolve.sh /usr/local/bin/steer.sh /usr/local/bin/repo-context.sh /usr/local/bin/deploy-setup.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
