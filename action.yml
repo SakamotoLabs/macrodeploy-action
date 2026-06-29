@@ -82,6 +82,10 @@ inputs:
     description: "Autonomy: 'true' to auto-merge PRs that are green, tested, low-risk, and finding-free."
     required: false
     default: "false"
+  block_warnings:
+    description: "Strictness: 'true' to treat warning-level findings (not just failures) as blocking — for auto-merge eligibility and for what the fix flow addresses."
+    required: false
+    default: "false"
 
 runs:
   using: "docker"
@@ -108,4 +112,5 @@ runs:
     INPUT_CHECKLIST: ${{ inputs.checklist }}
     INPUT_SKILL: ${{ inputs.skill }}
     INPUT_AUTO_MERGE: ${{ inputs.auto_merge }}
+    INPUT_BLOCK_WARNINGS: ${{ inputs.block_warnings }}
     GITHUB_TOKEN: ${{ inputs.github_token }}

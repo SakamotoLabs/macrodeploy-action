@@ -50,15 +50,20 @@ $(echo "$risky" | sed 's/^/- /')"
     return 0
   fi
 
-  # (2) no blocking (failure) review findings
-  local cid fails=0
+  # (2) no blocking review findings. Failures always block; warnings block too
+  # when the repo opts into strict mode (MACRODEPLOY_BLOCK_WARNINGS / block_warnings).
+  local cid fails=0 levels='.annotation_level=="failure"' label="failure"
+  if [ "${INPUT_BLOCK_WARNINGS:-false}" = "true" ]; then
+    levels='(.annotation_level=="failure" or .annotation_level=="warning")'
+    label="warning/failure"
+  fi
   cid=$(_am_api "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${head}/check-runs" \
     | jq -r '.check_runs[] | select(.name=="MacroDeploy review") | .id' | head -1)
   if [ -n "$cid" ] && [ "$cid" != "null" ]; then
     fails=$(_am_api "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs/${cid}/annotations" \
-      | jq '[.[] | select(.annotation_level=="failure")] | length')
+      | jq "[.[] | select(${levels})] | length")
   fi
-  if [ "${fails:-0}" -gt 0 ]; then _am_escalate "$pr" "${fails} blocking (failure) review finding(s) — address them first."; return 0; fi
+  if [ "${fails:-0}" -gt 0 ]; then _am_escalate "$pr" "${fails} blocking (${label}) review finding(s) — address them first."; return 0; fi
 
   # Eligible → squash merge.
   local res

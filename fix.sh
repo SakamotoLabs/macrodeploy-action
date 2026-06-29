@@ -57,17 +57,19 @@ CID=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}
   | jq -r '.check_runs[] | select(.name=="MacroDeploy review") | .id' | head -1)
 FINDINGS=""
 if [ -n "$CID" ]; then
-  # Only address significant findings (warning/failure). Skip `notice` nits so
-  # the fix → re-review loop converges instead of churning on style minutiae.
+  # Address failures always; warnings only when the repo opts into strict mode
+  # (block_warnings). Always skip `notice` nits so the fix→re-review loop converges.
+  LEVELS='.annotation_level=="failure"'
+  [ "${INPUT_BLOCK_WARNINGS:-false}" = "true" ] && LEVELS='(.annotation_level=="failure" or .annotation_level=="warning")'
   FINDINGS=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs/${CID}/annotations" \
-    | jq -r '.[] | select(.annotation_level=="warning" or .annotation_level=="failure") | "- \(.path):\(.start_line) [\(.annotation_level)] \(.message)"')
+    | jq -r ".[] | select(${LEVELS}) | \"- \(.path):\(.start_line) [\(.annotation_level)] \(.message)\"")
 fi
 if [ -z "$FINDINGS" ]; then
-  echo "fix: no significant findings (warning/failure) to address"
+  echo "fix: no blocking findings to address"
   api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
     -d "$(jq -n --arg b "### 🔧 MacroDeploy fix
 
-No significant findings (warning/failure) to address — only minor notes remain, which are safe to ignore or handle manually. ✅" '{body:$b}')" >/dev/null || true
+No blocking findings to address — only non-blocking notes remain, which are safe to ignore or handle manually. ✅" '{body:$b}')" >/dev/null || true
   exit 0
 fi
 
