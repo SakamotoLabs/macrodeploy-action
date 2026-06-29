@@ -66,6 +66,10 @@ if [ "${INPUT_MODE:-verify}" = "recommend" ]; then
   git config --global --add safe.directory "$PWD" 2>/dev/null || true
   exec node /usr/local/bin/recommend.mjs
 fi
+if [ "${INPUT_MODE:-verify}" = "research" ]; then
+  git config --global --add safe.directory "$PWD" 2>/dev/null || true
+  exec node /usr/local/bin/research.mjs
+fi
 if [ "${INPUT_MODE:-verify}" = "plan" ]; then
   git config --global --add safe.directory "$PWD" 2>/dev/null || true
   exec node /usr/local/bin/plan.mjs

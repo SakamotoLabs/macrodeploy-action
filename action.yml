@@ -31,7 +31,7 @@ inputs:
     required: false
     default: ${{ github.token }}
   mode:
-    description: "verify (PR gate + review), implement (issue→PR), fix, review (re-review a PR), resolve (resolve merge conflicts), steer (apply a /macrodeploy PR comment), security, coverage, deployaudit (deployment audit), deploysetup (scaffold deploy-on-merge), recommend, plan, checklist (audit the repo against .macrodeploy/checklist.md), or qa (headless Chrome QA)."
+    description: "verify (PR gate + review), implement (issue→PR), fix, review (re-review a PR), resolve (resolve merge conflicts), steer (apply a /macrodeploy PR comment), security, coverage, deployaudit (deployment audit), deploysetup (scaffold deploy-on-merge), recommend, research (answer a question about the repo + optional ideas), plan, checklist (audit the repo against .macrodeploy/checklist.md), or qa (headless Chrome QA)."
     required: false
     default: "verify"
   issue_number:
@@ -68,6 +68,10 @@ inputs:
     default: ""
   feature:
     description: "Plan mode: the feature description to break into tasks."
+    required: false
+    default: ""
+  question:
+    description: "Research mode: a free-form question about the repo for the agent to investigate and answer."
     required: false
     default: ""
   checklist:
@@ -113,6 +117,7 @@ runs:
     INPUT_APP_PORT: ${{ inputs.app_port }}
     INPUT_QA_INSTRUCTIONS: ${{ inputs.qa_instructions }}
     INPUT_PLAN_FEATURE: ${{ inputs.feature }}
+    INPUT_QUESTION: ${{ inputs.question }}
     INPUT_CHECKLIST: ${{ inputs.checklist }}
     INPUT_SKILL: ${{ inputs.skill }}
     INPUT_AUTO_MERGE: ${{ inputs.auto_merge }}
