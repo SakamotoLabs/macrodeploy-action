@@ -73,6 +73,17 @@ $(echo "$risky" | sed 's/^/- /')"
     _am_comment "$pr" "### 🤖 Auto-merged
 Gate green ✓ · a test accompanies the change ✓ · no blocking findings ✓ · low-risk diff ✓ — merged automatically by MacroDeploy."
     echo "automerge: merged #${pr}"
+    # Explicitly close the linked issue. GitHub's "Closes #N" keyword auto-close
+    # is unreliable for app/squash merges, which would leave the dashboard showing
+    # the issue as still in-progress after its PR has landed.
+    local branch issue
+    branch=$(_am_api "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${pr}" | jq -r '.head.ref // ""')
+    issue=$(printf '%s' "$branch" | sed -n 's#^macrodeploy/issue-\([0-9][0-9]*\)$#\1#p')
+    if [ -n "$issue" ]; then
+      _am_api -X PATCH "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${issue}" \
+        -d '{"state":"closed","state_reason":"completed"}' >/dev/null \
+        && echo "automerge: closed issue #${issue}"
+    fi
   else
     _am_escalate "$pr" "ready to merge, but the merge call failed: $(echo "$res" | jq -r '.message // "unknown"') (branch protection?)."
   fi
