@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Fix mode: address the AI review findings on an existing PR — the agent edits
-# the PR's own branch (a new commit), then we re-gate + re-review. Triggered by
-# workflow_dispatch with the PR number. Self-contained (only ANTHROPIC_API_KEY).
+# Fix mode: make the PR mergeable — address the AI review findings AND, if the
+# verify gate (build/tests) is red, repair that too (it's blocking this PR), all on
+# the PR's own branch. Triggered by workflow_dispatch with the PR number.
+# Self-contained (only ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN).
 set -uo pipefail
 
 cd "${GITHUB_WORKSPACE:-/github/workspace}" || { echo "no workspace"; exit 1; }
@@ -9,9 +10,8 @@ cd "${GITHUB_WORKSPACE:-/github/workspace}" || { echo "no workspace"; exit 1; }
 KEY="${INPUT_ANTHROPIC_API_KEY:-}"
 MODEL="${INPUT_MODEL:-claude-sonnet-4-6}"
 PR="${INPUT_PR_NUMBER:-}"
+MAX_GATE_REPAIRS=2 # bounded so a truly-stuck gate escalates instead of looping
 
-# Accept a Claude Pro/Max OAuth token (exported by entrypoint.sh) as well as an
-# API key — Claude Code picks up either from the environment.
 if [ -z "$KEY" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
   echo "fix: no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1
 fi
@@ -21,14 +21,30 @@ git config --global --add safe.directory "$PWD" 2>/dev/null || true
 
 api() { curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "$@"; }
 
+# Pull the human-readable failing lines out of a verify.sh run, for the agent
+# prompt and the escalation comment.
+extract_fails() {
+  printf '%s\n' "$1" \
+    | grep -iE '✗|✘|FAIL|error TS|Error:|assert|expected|failing|failed' \
+    | grep -viE '::(group|endgroup)|VERIFY (PASSED|FAILED)|gate check posted' \
+    | head -40
+}
+
+post_comment() {
+  api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+    -d "$(jq -n --arg b "$1" '{body:$b}')" >/dev/null 2>&1 || true
+}
+post_gate() { # post_gate <sha> <success|failure>
+  api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs" \
+    -d "$(jq -n --arg s "$1" --arg c "$2" \
+      '{name:"MacroDeploy gate", head_sha:$s, status:"completed", conclusion:$c, output:{title:"Verify gate", summary:("Gate " + $c + " after fix.")}}')" \
+    >/dev/null 2>&1 || true
+}
+
 # Scoped (changed-files-only) test runner for the red→green gate.
 # shellcheck source=/dev/null
 source /usr/local/bin/scoped-tests.sh
 
-# Coding rubric (root-cause → test-first → verify) injected as the system prompt;
-# distilled from the ea-core systematic-debugging / TDD / verification skills.
-# The repo's own CLAUDE.md / AGENTS.md is auto-loaded by Claude Code as project
-# memory, so the agent also follows the project's conventions.
 SYS_ARGS=()
 [ -f /usr/local/share/macrodeploy/skills/fixing.md ] \
   && SYS_ARGS=(--append-system-prompt "$(cat /usr/local/share/macrodeploy/skills/fixing.md)")
@@ -41,6 +57,7 @@ BASE_REF=$(echo "$PRJSON" | jq -r '.base.ref')
 git fetch --no-tags origin "$HEAD_REF" "$BASE_REF" 2>/dev/null || true
 git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
 HEAD_SHA=$(git rev-parse HEAD)
+NEW_SHA="$HEAD_SHA"
 
 echo "::group::Install dependencies"
 if [ -f package.json ]; then
@@ -52,16 +69,24 @@ if [ -f package.json ]; then
 fi
 echo "::endgroup::"
 
-# Collect the review findings from the "MacroDeploy review" check.
+# GITHUB_TOKEN can't push .github/workflows changes — drop any the agent makes.
+drop_workflow_changes() {
+  if [ -n "$(git status --porcelain -- .github/workflows 2>/dev/null)" ]; then
+    echo "fix: dropping .github/workflows changes — GITHUB_TOKEN can't push them"
+    git checkout -- .github/workflows 2>/dev/null || true
+    git clean -fdq .github/workflows 2>/dev/null || true
+  fi
+}
+
+git config user.name "macrodeploy[bot]"
+git config user.email "macrodeploy@users.noreply.github.com"
+[ -n "$KEY" ] && export ANTHROPIC_API_KEY="$KEY"
+
+# ── Collect review findings from the "MacroDeploy review" check ────────────────
 CID=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs" \
   | jq -r '.check_runs[] | select(.name=="MacroDeploy review") | .id' | head -1)
 FINDINGS=""
 if [ -n "$CID" ]; then
-  # Address failures always. Include warnings when EITHER the repo treats warnings
-  # as blocking (block_warnings, the autonomous policy) OR this run was explicitly
-  # asked to (fix_warnings, set by the dashboard's manual "Fix findings" so a user
-  # can fix warnings on demand even when they don't gate auto-merge). Always skip
-  # `notice` nits so the fix→re-review loop converges.
   LEVELS='.annotation_level=="failure"'
   if [ "${INPUT_BLOCK_WARNINGS:-false}" = "true" ] || [ "${INPUT_FIX_WARNINGS:-false}" = "true" ]; then
     LEVELS='(.annotation_level=="failure" or .annotation_level=="warning")'
@@ -69,180 +94,181 @@ if [ -n "$CID" ]; then
   FINDINGS=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs/${CID}/annotations" \
     | jq -r ".[] | select(${LEVELS}) | \"- \(.path):\(.start_line) [\(.annotation_level)] \(.message)\"")
 fi
-if [ -z "$FINDINGS" ]; then
-  echo "fix: no blocking findings to address"
-  api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
-    -d "$(jq -n --arg b "### 🔧 MacroDeploy fix
 
-No blocking findings to address — only non-blocking notes remain, which are safe to ignore or handle manually. ✅" '{body:$b}')" >/dev/null || true
-  exit 0
-fi
+SUMMARY=""
 
-echo "::group::Agent (Claude Code, test-first)"
-# Only export a non-empty key — empty would shadow the OAuth token in the CLI.
-[ -n "$KEY" ] && export ANTHROPIC_API_KEY="$KEY"
-CONTEXT=$(repo-context.sh "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" 2>/dev/null || true)
-PROMPT="Address these code review findings in this repository, working test-first.
+# ── Phase 1: address review findings (if any) ─────────────────────────────────
+if [ -n "$FINDINGS" ]; then
+  echo "::group::Agent — review findings (test-first)"
+  CONTEXT=$(repo-context.sh "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" 2>/dev/null || true)
+  PROMPT="Address these code review findings in this repository, working test-first.
 
 ${CONTEXT}
 
 For each finding where a test is feasible:
   1. First add or extend a FOCUSED test that fails BECAUSE of the finding, and run
-     ONLY that test (plus closely-related tests) to confirm it fails (red). Use the
-     repo's existing test runner. Do NOT run the entire test suite — it is slow and
-     runs later as a separate gate.
+     ONLY that test to confirm it fails (red). Do NOT run the whole suite.
   2. Implement the minimal fix.
-  3. Run ONLY those targeted/related tests again, and iterate until they pass (green).
-If a finding genuinely cannot be tested (e.g. config, infra, a pure dependency bump),
-fix it and say so — do NOT invent a hollow test just to have one.
+  3. Run ONLY those targeted tests again until they pass (green).
+If a finding genuinely cannot be tested, fix it and say so — do NOT invent a hollow test.
 
 Do NOT use git and do NOT open a pull request — only edit files and run tests.
 
-End your reply with a 1-3 sentence summary of what you changed, then on the VERY LAST
-line exactly one of:
-  MACRODEPLOY_VERIFY=pass   (you added/updated targeted tests and they pass red→green)
-  MACRODEPLOY_VERIFY=fail   (you could not get the targeted tests passing)
-  MACRODEPLOY_VERIFY=none   (no targeted test was feasible for these findings)
+End with a 1-3 sentence summary, then on the VERY LAST line exactly one of:
+  MACRODEPLOY_VERIFY=pass | MACRODEPLOY_VERIFY=fail | MACRODEPLOY_VERIFY=none
 
 FINDINGS:
 ${FINDINGS}"
-RAW=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
-  --allowedTools "Edit,Write,Read,Bash,Grep,Glob" "${SYS_ARGS[@]}" 2>/dev/null) || echo "(agent run returned non-zero)"
-# Split the machine verdict off the human-facing summary.
-VERDICT=$(printf '%s\n' "$RAW" | grep -oE 'MACRODEPLOY_VERIFY=(pass|fail|none)' | tail -1 | cut -d= -f2)
-SUMMARY=$(printf '%s\n' "$RAW" | grep -v 'MACRODEPLOY_VERIFY=')
-echo "$SUMMARY"
-echo "fix: agent verdict = ${VERDICT:-unknown}"
-echo "::endgroup::"
+  RAW=$(claude -p "$PROMPT" --model "$MODEL" --permission-mode acceptEdits \
+    --allowedTools "Edit,Write,Read,Bash,Grep,Glob" "${SYS_ARGS[@]}" 2>/dev/null) || echo "(agent run returned non-zero)"
+  VERDICT=$(printf '%s\n' "$RAW" | grep -oE 'MACRODEPLOY_VERIFY=(pass|fail|none)' | tail -1 | cut -d= -f2)
+  FSUM=$(printf '%s\n' "$RAW" | grep -v 'MACRODEPLOY_VERIFY=')
+  echo "$FSUM"
+  echo "fix: findings agent verdict = ${VERDICT:-unknown}"
+  echo "::endgroup::"
+  drop_workflow_changes
 
-# GITHUB_TOKEN can't push .github/workflows changes — drop any the agent made so
-# they don't get the whole push rejected.
-if [ -n "$(git status --porcelain -- .github/workflows 2>/dev/null)" ]; then
-  echo "fix: dropping .github/workflows changes — GITHUB_TOKEN can't push them"
-  git checkout -- .github/workflows 2>/dev/null || true
-  git clean -fdq .github/workflows 2>/dev/null || true
-fi
+  if [ -z "$(git status --porcelain)" ]; then
+    # No change: record the findings as dismissed non-issues + clear the review.
+    echo "fix: findings agent made no changes (dismissed)"
+    CLEAR_SHA="$HEAD_SHA"
+    mkdir -p .macrodeploy
+    {
+      printf '\n### Dismissed %s (PR #%s)\n' "$(date -u +%Y-%m-%d)" "$PR"
+      printf '%s\n' "$FINDINGS"
+      printf '_Assessed by the fix agent as non-issues / intended behavior._\n'
+    } >> .macrodeploy/memory.md
+    git add .macrodeploy/memory.md
+    if git commit -q -m "MacroDeploy: record dismissed findings as known non-issues (#${PR})" \
+       && git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"; then
+      CLEAR_SHA=$(git rev-parse HEAD)
+      NEW_SHA="$CLEAR_SHA"
+    fi
+    post_comment "### 🔧 MacroDeploy fix — no change needed
 
-if [ -z "$(git status --porcelain)" ]; then
-  echo "fix: agent made no changes"
+The agent assessed the findings and decided no code change was required. Its reasoning:
 
-  # Record the dismissed findings as known non-issues in the repo's MacroDeploy
-  # memory, so future reviews (which read .macrodeploy/memory.md) stop re-flagging
-  # them — this is what stops the re-review churn. Commit just that file to the PR
-  # branch; it merges to the default branch when the PR lands. (A GITHUB_TOKEN
-  # push doesn't re-trigger workflows, so no loop.)
-  CLEAR_SHA="$HEAD_SHA"
-  mkdir -p .macrodeploy
-  {
-    printf '\n### Dismissed %s (PR #%s)\n' "$(date -u +%Y-%m-%d)" "$PR"
-    printf '%s\n' "$FINDINGS"
-    printf '_Assessed by the fix agent as non-issues / intended behavior._\n'
-  } >> .macrodeploy/memory.md
-  git config user.name "macrodeploy[bot]"
-  git config user.email "macrodeploy@users.noreply.github.com"
-  git add .macrodeploy/memory.md
-  if git commit -q -m "MacroDeploy: record dismissed findings as known non-issues (#${PR})" \
-     && git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"; then
-    CLEAR_SHA=$(git rev-parse HEAD)
-    echo "fix: recorded non-issues to .macrodeploy/memory.md"
-  fi
-
-  api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
-    -d "$(jq -n --arg b "### 🔧 MacroDeploy fix — no change needed
-
-The agent assessed the findings and decided no code change was required (e.g. the concern was already handled, or it was a false positive). Its reasoning:
-
-${SUMMARY:-(no detail provided)}
+${FSUM:-(no detail provided)}
 
 **Findings considered:**
 ${FINDINGS}
 
-_Recorded as known non-issues in \`.macrodeploy/memory.md\` so they won't be re-flagged._" '{body:$b}')" >/dev/null || true
-
-  # Clear the dismissed findings (keep notices) by posting a fresh review check on
-  # the current head; the dashboard reads the latest one.
-  if [ -n "$CID" ] && [ "$CID" != "null" ]; then
-    KEEP=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs/${CID}/annotations" \
-      | jq '[.[] | select(.annotation_level=="notice") | {path, start_line, end_line, annotation_level, message}]')
-    api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs" \
-      -d "$(jq -n --argjson ann "${KEEP:-[]}" --arg s "$CLEAR_SHA" '{name:"MacroDeploy review", head_sha:$s, status:"completed", conclusion:"success", output:{title:"MacroDeploy review", summary:"Earlier findings were assessed by the fix agent and required no change — cleared. See the fix comment for the reasoning.", annotations:$ann}}')" \
-      >/dev/null && echo "fix: cleared dismissed findings"
-  fi
-  exit 0
-fi
-
-# Red→green gate (SCOPED). The agent self-reports a verdict; we independently
-# confirm by re-running ONLY the changed test files. The whole suite is NOT run
-# here — it runs once afterwards as the pre-merge gate (verify.sh below). On
-# failure we escalate and DO NOT push, so a broken/unverified fix never lands.
-ESCALATE_REASON=""
-if [ "$VERDICT" = "fail" ]; then
-  ESCALATE_REASON="the fix could not get its targeted tests passing (red→green failed)."
-else
-  echo "::group::Scoped tests (changed files only)"
-  run_changed_tests "$BASE_REF"; SC=$?
-  echo "::endgroup::"
-  [ "${SC:-2}" -eq 1 ] && ESCALATE_REASON="the targeted tests for this fix are failing."
-fi
-if [ -n "$ESCALATE_REASON" ]; then
-  api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/labels" \
-    -d '{"labels":["needs-human"]}' >/dev/null 2>&1 || true
-  api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
-    -d "$(jq -n --arg b "### 🙋 MacroDeploy fix — needs a human
-
-Held back — ${ESCALATE_REASON} **The change was not pushed.**
-
-**Agent summary:**
-${SUMMARY:-(none)}
-
-**Findings considered:**
-${FINDINGS}" '{body:$b}')" >/dev/null 2>&1 || true
-  echo "fix: escalated #${PR} — not pushed (${ESCALATE_REASON})"
-  exit 0
-fi
-
-case "$VERDICT" in
-  pass) VERIFY_NOTE="✅ Targeted test(s) added/updated and confirmed passing (red→green).";;
-  none) VERIFY_NOTE="⚠️ No targeted test was feasible for these findings — the full suite runs at the merge gate.";;
-  *)    VERIFY_NOTE="Targeted tests checked.";;
-esac
-
-git config user.name "macrodeploy[bot]"
-git config user.email "macrodeploy@users.noreply.github.com"
-# Auto-fix trivial lint/format on the changed files before committing the fix.
-echo "::group::Autofix (changed files)"
-autofix.sh .
-echo "::endgroup::"
-git add -A
-git commit -q -m "Address MacroDeploy review findings (#${PR})"
-git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"
-NEW_SHA=$(git rev-parse HEAD)
-echo "fix: pushed a commit to ${HEAD_REF}"
-
-# Document the fix in the PR conversation.
-api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
-  -d "$(jq -n --arg b "### 🔧 MacroDeploy fix — addressed review findings
+_Recorded as known non-issues in \`.macrodeploy/memory.md\` so they won't be re-flagged._"
+    if [ -n "$CID" ] && [ "$CID" != "null" ]; then
+      KEEP=$(api "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs/${CID}/annotations" \
+        | jq '[.[] | select(.annotation_level=="notice") | {path, start_line, end_line, annotation_level, message}]')
+      api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs" \
+        -d "$(jq -n --argjson ann "${KEEP:-[]}" --arg s "$CLEAR_SHA" '{name:"MacroDeploy review", head_sha:$s, status:"completed", conclusion:"success", output:{title:"MacroDeploy review", summary:"Earlier findings were assessed and required no change — cleared.", annotations:$ann}}')" \
+        >/dev/null || true
+    fi
+    # Fall through: even with findings dismissed, the gate may be red — repair below.
+  else
+    # Push the findings fix. The full verify gate below (+ repair loop) is the
+    # authoritative check now, so we don't hold back on a scoped pre-check here.
+    echo "::group::Autofix (changed files)"; autofix.sh .; echo "::endgroup::"
+    git add -A
+    git commit -q -m "Address MacroDeploy review findings (#${PR})"
+    git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"
+    NEW_SHA=$(git rev-parse HEAD)
+    SUMMARY="$FSUM"
+    echo "fix: pushed findings fix to ${HEAD_REF}"
+    post_comment "### 🔧 MacroDeploy fix — addressed review findings
 
 **What changed:**
-${SUMMARY:-(see commit)}
-
-**Verification:** ${VERIFY_NOTE}
+${FSUM:-(see commit)}
 
 **Findings addressed:**
 ${FINDINGS}
 
-Pushed commit \`$(echo "$NEW_SHA" | cut -c1-8)\` to \`${HEAD_REF}\`. Re-running gate + review below." '{body:$b}')" >/dev/null && echo "fix: posted PR comment"
+Pushed \`$(echo "$NEW_SHA" | cut -c1-8)\`. Verifying + (if needed) repairing the gate below."
+  fi
+fi
 
-echo "::group::Verify (after fix)"
-verify.sh .
-GATE_RC=$?
+# ── Phase 2: verify the gate, and REPAIR it if red (it blocks this PR) ─────────
+echo "::group::Verify (gate)"
+GATE_OUT=$(verify.sh . 2>&1); GATE_RC=$?
+printf '%s\n' "$GATE_OUT" | tail -60
 echo "::endgroup::"
-CONCL=$([ "$GATE_RC" -eq 0 ] && echo success || echo failure)
-api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs" \
-  -d "$(jq -n --arg s "$NEW_SHA" --arg c "$CONCL" \
-    '{name:"MacroDeploy gate", head_sha:$s, status:"completed", conclusion:$c, output:{title:"Verify gate", summary:("Gate " + $c + " after fix.")}}')" \
-  >/dev/null && echo "gate check posted ($CONCL)"
+post_gate "$NEW_SHA" "$([ "$GATE_RC" -eq 0 ] && echo success || echo failure)"
 
+# Nothing to do: no findings to fix and the gate is already green.
+if [ -z "$FINDINGS" ] && [ "$GATE_RC" -eq 0 ]; then
+  echo "fix: no findings and gate green — nothing to do"
+  post_comment "### 🔧 MacroDeploy fix — nothing to do
+
+No blocking review findings, and the verify gate is green. ✅"
+  exit 0
+fi
+
+attempt=0
+while [ "$GATE_RC" -ne 0 ] && [ "$attempt" -lt "$MAX_GATE_REPAIRS" ]; do
+  attempt=$((attempt + 1))
+  FAILS=$(extract_fails "$GATE_OUT")
+  echo "::group::Gate repair — attempt ${attempt}"
+  RPROMPT="The verify gate (full build + tests) is FAILING on this pull request and is
+blocking it from merging. Fix the failing checks so the build and the entire test
+suite pass. A failure may be pre-existing or unrelated to this PR's feature — fix
+it anyway, because it is blocking this PR. Prefer fixing the root cause; if a test
+itself is wrong/flaky, correct the test. Make minimal changes.
+
+Do NOT use git and do NOT open a pull request — only edit files and run tests.
+End with a 1-3 sentence summary of what you changed.
+
+FAILING CHECKS:
+${FAILS:-$(printf '%s\n' "$GATE_OUT" | tail -30)}"
+  RAW=$(claude -p "$RPROMPT" --model "$MODEL" --permission-mode acceptEdits \
+    --allowedTools "Edit,Write,Read,Bash,Grep,Glob" "${SYS_ARGS[@]}" 2>/dev/null) || echo "(agent run returned non-zero)"
+  RSUM=$(printf '%s\n' "$RAW" | grep -v 'MACRODEPLOY_VERIFY=')
+  echo "$RSUM"
+  echo "::endgroup::"
+  drop_workflow_changes
+  if [ -z "$(git status --porcelain)" ]; then
+    echo "gate-repair: agent made no changes — cannot fix, stopping"
+    break
+  fi
+  echo "::group::Autofix (changed files)"; autofix.sh .; echo "::endgroup::"
+  git add -A
+  git commit -q -m "MacroDeploy: repair failing gate (#${PR}) [attempt ${attempt}]"
+  git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"
+  NEW_SHA=$(git rev-parse HEAD)
+  SUMMARY="${SUMMARY}
+Gate-repair ${attempt}: ${RSUM}"
+  post_comment "### 🔧 MacroDeploy — gate repair (attempt ${attempt})
+
+The build/tests were failing (this blocks the PR). The agent attempted a fix:
+
+${RSUM:-(see commit)}
+
+Re-verifying…"
+  echo "::group::Verify (after repair ${attempt})"
+  GATE_OUT=$(verify.sh . 2>&1); GATE_RC=$?
+  printf '%s\n' "$GATE_OUT" | tail -60
+  echo "::endgroup::"
+  post_gate "$NEW_SHA" "$([ "$GATE_RC" -eq 0 ] && echo success || echo failure)"
+done
+
+# ── Still red after repairs → escalate with a CLEAR, actionable message ────────
+if [ "$GATE_RC" -ne 0 ]; then
+  FAILS=$(extract_fails "$GATE_OUT")
+  api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/labels" \
+    -d '{"labels":["needs-human"]}' >/dev/null 2>&1 || true
+  post_comment "### 🙋 MacroDeploy — needs a human
+
+The build/tests are still failing after ${attempt} automated repair attempt(s), so
+**auto-merge stays blocked** until the gate is green.
+
+**Still failing:**
+\`\`\`
+${FAILS:-see the run logs}
+\`\`\`
+
+**What to do:** open the PR, fix the failing check(s) above and push — or click
+**Fix findings** again to retry. Clicking Fix re-runs the repair, so it's safe."
+  echo "fix: gate still red after ${attempt} repair attempt(s) — escalated #${PR}"
+  exit 0
+fi
+
+# ── Gate green → re-review + auto-merge ────────────────────────────────────────
 echo "::group::Review (after fix)"
 REVIEW_BASE_REF="$BASE_REF" REVIEW_HEAD_SHA="$NEW_SHA" REVIEW_PR_NUMBER="$PR" \
   INPUT_ANTHROPIC_API_KEY="$KEY" INPUT_MODEL="$MODEL" \
@@ -252,5 +278,5 @@ echo "::endgroup::"
 echo "::group::Auto-merge"
 # shellcheck source=/dev/null
 source /usr/local/bin/automerge.sh
-maybe_automerge "$PR" "$CONCL" "$BASE_REF" "$NEW_SHA"
+maybe_automerge "$PR" "success" "$BASE_REF" "$NEW_SHA"
 echo "::endgroup::"
